@@ -29,7 +29,7 @@ function Payments() {
   const { data: detail } = usePayment(selId);
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
   return (
-    <div className="grid gap-5 lg:grid-cols-[340px,1fr]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
       <Card className="!p-3">
         <div className="mb-2 flex flex-wrap gap-1" role="tablist">
           {FILTERS.map((x) => {

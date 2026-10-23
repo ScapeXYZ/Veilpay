@@ -96,7 +96,7 @@ function CreateInvoice() {
   const [inputErr, setInputErr] = useState<string | null>(null);
   return (
     <Card title="New invoice" testId="create-invoice">
-      <div className="grid gap-3 sm:grid-cols-[1fr,140px]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
         <Field label="Reference">
           <input className={inputCls} value={reference} maxLength={64} onChange={(e) => { setReference(e.target.value); setKey(newIdempotencyKey()); }} />
         </Field>
@@ -213,7 +213,7 @@ export default function MerchantPage() {
         <Notice tone="neutral" title="What this proves, exactly">
           Receipt state for one invoice: amount and confirmations at a fresh address. In the demo the operator holds the merchant&apos;s incoming viewing key (custodial). An acknowledgment is the merchant service&apos;s signed statement, not chain proof.
         </Notice>
-        <div className="grid gap-5 lg:grid-cols-[1.2fr,0.8fr]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Lookup />
           <div className="flex flex-col gap-5">
             <CreateInvoice />

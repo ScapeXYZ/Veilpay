@@ -40,7 +40,7 @@ function BlockedOpener() {
           </p>
         </div>
       </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div>
           {shown ? (
             <div className="flex flex-col gap-3">
@@ -71,7 +71,7 @@ function HappyPath() {
   const p = live ?? created;
   return (
     <Card testId="happy-path" title="Then a request inside the policy">
-      <div className="grid gap-5 lg:grid-cols-[0.8fr,1.2fr]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[0.8fr_1.2fr]">
         <RequestComposer preset={presets(api.mode === "mock").happy} cta="Agent: request this payment" onResult={setCreated} testId="request-happy" />
         <div>
           {p ? (
@@ -103,7 +103,7 @@ export default function Overview() {
         subtitle="An AI agent pays merchants in shielded ZEC. The backend enforces the owner's policy, the chain hides the details, and the merchant verifies receipt on their side."
       />
       <RequireContext ctx="customer">
-        <div className="grid gap-5 lg:grid-cols-[1fr,320px]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-5">
             <BlockedOpener />
             <HappyPath />

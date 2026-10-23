@@ -59,7 +59,7 @@ export function RequestComposer({
 
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
-      <div className="grid gap-3 sm:grid-cols-[1.3fr,0.7fr]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.3fr_0.7fr]">
         <Field label="Invoice id" hint={api.mode === "live" ? "From the merchant (create one in the Merchant view)." : undefined}>
           <input className={inputCls} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} spellCheck={false} />
         </Field>

@@ -49,7 +49,7 @@ export default function PrivacyPage() {
             {sample?.pool && <span>· {sample.pool} pool</span>}
             <SourceTag />
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Column testId="lens-public" icon={<Globe size={16} className="text-zinc-400" aria-hidden />} title="Anyone watching the chain sees" items={lens.publicChainSees} tone="border-zinc-800 bg-zinc-900/60" />
             <Column testId="lens-hidden" icon={<EyeOff size={16} className="text-emerald-400" aria-hidden />} title="Hidden on chain" items={lens.hiddenOnChain} tone="border-emerald-900 bg-emerald-950/20" />
             <Column testId="lens-merchant" icon={<Store size={16} className="text-amber-300" aria-hidden />} title="The merchant sees" items={lens.merchantSees} tone="border-amber-900/70 bg-amber-950/10" />

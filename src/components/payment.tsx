@@ -177,7 +177,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
       <FailureNotice p={p} />
       <ExecuteBlock p={p} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card title="Payment timeline" className="!bg-zinc-950/40">
           <Timeline p={p} />
           {["submitted", "confirming", "confirmed"].includes(p.status) && !unresolvedOf(p) && (
@@ -190,7 +190,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
         <div className="flex flex-col gap-4">
           <DecisionPanel d={p.decision} />
           <Card title="Send record" className="!bg-zinc-950/40" testId="send-record">
-            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-zinc-500">Status</dt>
               <dd>{STATUS_COPY[p.status].label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>

@@ -52,7 +52,7 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
   const conflict = put.error instanceof ApiError && put.error.body.code === "VERSION_CONFLICT";
   return (
     <Card title={`Policy v${a.policy.version}`} action={<span className="text-xs text-zinc-500">updated {fmtTime(a.policy.updatedAt)}</span>} testId="policy-form">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Per-payment cap (ZEC)">
           <input className={`${inputCls} font-mono`} value={cap} onChange={(e) => setCap(e.target.value)} data-testid="cap-input" />
         </Field>
@@ -96,7 +96,7 @@ export default function PolicyPage() {
     <>
       <PageHeader title="Agent policy" subtitle="The owner's rules, enforced by the backend on every request and again at execute." />
       <RequireContext ctx="customer">
-        <div className="grid gap-5 lg:grid-cols-[1fr,340px]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
           <PolicyForm />
           <AgentSummary withControls />
         </div>
