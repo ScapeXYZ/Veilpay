@@ -1,0 +1,993 @@
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode},
+};
+use serde_json::{Value, json};
+use tower::ServiceExt;
+use veilpay_backend::{App, Config};
+
+const ORIGIN: &str = "http://localhost:3000";
+#[derive(Clone)]
+struct Session {
+    cookie: String,
+    csrf: String,
+}
+struct Reply {
+    status: u16,
+    body: Value,
+    raw: Vec<u8>,
+    replay: bool,
+    cookie: Option<String>,
+}
+struct Fixture {
+    app: App,
+    router: Router,
+    customer: Session,
+    merchant: Session,
+}
+async fn call(
+    router: &Router,
+    method: &str,
+    path: &str,
+    session: Option<&Session>,
+    key: Option<&str>,
+    body: Value,
+) -> Reply {
+    let mut req = Request::builder()
+        .method(method)
+        .uri(format!("/api/{path}"))
+        .header("origin", ORIGIN)
+        .header("content-type", "application/json");
+    if let Some(s) = session {
+        req = req
+            .header("cookie", &s.cookie)
+            .header("x-csrf-token", &s.csrf);
+    }
+    if let Some(k) = key {
+        req = req.header("idempotency-key", k);
+    }
+    let response = router
+        .clone()
+        .oneshot(req.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    decode(response).await
+}
+async fn decode(response: axum::response::Response) -> Reply {
+    let status = response.status().as_u16();
+    let replay = response
+        .headers()
+        .get("idempotent-replay")
+        .is_some_and(|v| v == "true");
+    let cookie = response
+        .headers()
+        .get("set-cookie")
+        .map(|v| v.to_str().unwrap().to_owned());
+    let raw = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+    let body = serde_json::from_slice(&raw).unwrap_or(Value::Null);
+    Reply {
+        status,
+        body,
+        raw,
+        replay,
+        cookie,
+    }
+}
+impl Fixture {
+    async fn new() -> Self {
+        Self::at("sqlite::memory:").await
+    }
+    async fn at(database_url: &str) -> Self {
+        let app = App::open(Config {
+            database_url: database_url.into(),
+            frontend_origin: ORIGIN.into(),
+            network: "testnet".into(),
+        })
+        .await
+        .unwrap();
+        let router = app.clone().router();
+        let mut sessions = Vec::new();
+        for role in ["customer", "merchant"] {
+            let r = call(
+                &router,
+                "POST",
+                "session/demo",
+                None,
+                None,
+                json!({"context": role}),
+            )
+            .await;
+            assert_eq!(r.status, 200);
+            let cookie = r.cookie.unwrap();
+            for attr in [
+                "HttpOnly",
+                "Secure",
+                "SameSite=Strict",
+                "Path=/",
+                "Max-Age=28800",
+            ] {
+                assert!(cookie.contains(attr));
+            }
+            assert!(!cookie.contains("Domain="));
+            sessions.push(Session {
+                cookie: cookie.split(';').next().unwrap().into(),
+                csrf: r.body["csrfToken"].as_str().unwrap().into(),
+            });
+        }
+        Self {
+            app,
+            router,
+            customer: sessions.remove(0),
+            merchant: sessions.remove(0),
+        }
+    }
+    async fn agent(&self, cap: &str, budget: &str) -> Value {
+        let r = call(
+            &self.router,
+            "POST",
+            "agents",
+            Some(&self.customer),
+            Some(&uuid::Uuid::new_v4().to_string()),
+            json!({"name":"Agent", "policy": rules(cap, budget)}),
+        )
+        .await;
+        assert_eq!(r.status, 201, "{}", r.body);
+        r.body
+    }
+    async fn invoice(&self, amount: &str) -> Value {
+        let r = call(
+            &self.router,
+            "POST",
+            "merchant/invoices",
+            Some(&self.merchant),
+            Some(&uuid::Uuid::new_v4().to_string()),
+            json!({"reference":"invoice", "amountZat":amount}),
+        )
+        .await;
+        assert_eq!(r.status, 201);
+        r.body
+    }
+    async fn request(&self, agent: &Value, invoice: &Value, amount: &str, key: &str) -> Reply {
+        call(&self.router,"POST","payments/request",Some(&self.customer),Some(key),json!({"agentId":agent["id"],"invoiceId":invoice["id"],"amountZat":amount,"reference":"request"})).await
+    }
+    async fn execute(&self, payment: &Value, key: &str) -> Reply {
+        call(
+            &self.router,
+            "POST",
+            &format!("payments/{}/execute", payment["id"].as_str().unwrap()),
+            Some(&self.customer),
+            Some(key),
+            json!({}),
+        )
+        .await
+    }
+    async fn usage(&self, agent: &Value) -> Value {
+        call(
+            &self.router,
+            "GET",
+            &format!("agents/{}", agent["id"].as_str().unwrap()),
+            Some(&self.customer),
+            None,
+            json!({}),
+        )
+        .await
+        .body["usage"]
+            .clone()
+    }
+    async fn update(&self, agent: &Value, rules: Value) -> Reply {
+        let mut body = rules;
+        body["expectedVersion"] = json!(1);
+        call(
+            &self.router,
+            "PUT",
+            &format!("agents/{}/policy", agent["id"].as_str().unwrap()),
+            Some(&self.customer),
+            None,
+            body,
+        )
+        .await
+    }
+    async fn payment(&self) -> (Value, Value) {
+        let a = self.agent("100", "100").await;
+        let i = self.invoice("60").await;
+        let p = self.request(&a, &i, "60", "request-key").await;
+        assert_eq!(p.status, 201);
+        assert_eq!(p.body["status"], "authorized");
+        (a, p.body)
+    }
+    async fn ack(&self, p: &Value, key: &str, body: Value) -> Reply {
+        call(
+            &self.router,
+            "POST",
+            &format!("payments/{}/acknowledgment", p["id"].as_str().unwrap()),
+            Some(&self.merchant),
+            Some(key),
+            body,
+        )
+        .await
+    }
+}
+fn rules(cap: &str, budget: &str) -> Value {
+    json!({"perTxLimitZat":cap,"totalBudgetZat":budget,"allowedMerchantIds":["mer_demo"],"requestTtlSeconds":900})
+}
+fn violation(p: &Value, code: &str) -> bool {
+    p["decision"]["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v["code"] == code)
+}
+
+#[tokio::test]
+async fn policy_cap_budget_allowlist_pause_and_amount_are_enforced() {
+    let f = Fixture::new().await;
+    for (cap, budget, merchant, status, amount, code) in [
+        ("50", "100", "mer_demo", "active", "60", "CAP_EXCEEDED"),
+        ("100", "50", "mer_demo", "active", "60", "BUDGET_EXCEEDED"),
+        (
+            "100",
+            "100",
+            "mer_other",
+            "active",
+            "60",
+            "MERCHANT_NOT_ALLOWED",
+        ),
+        ("100", "100", "mer_demo", "paused", "60", "AGENT_PAUSED"),
+        ("100", "100", "mer_demo", "active", "59", "AMOUNT_MISMATCH"),
+    ] {
+        let a = f.agent(cap, budget).await;
+        let i = f.invoice("60").await;
+        if merchant != "mer_demo" {
+            let mut p = rules(cap, budget);
+            p["allowedMerchantIds"] = json!([merchant]);
+            assert_eq!(f.update(&a, p).await.status, 200);
+        }
+        if status == "paused" {
+            assert_eq!(
+                call(
+                    &f.router,
+                    "PATCH",
+                    &format!("agents/{}", a["id"].as_str().unwrap()),
+                    Some(&f.customer),
+                    None,
+                    json!({"status":status})
+                )
+                .await
+                .status,
+                200
+            );
+        }
+        let r = f
+            .request(&a, &i, amount, &uuid::Uuid::new_v4().to_string())
+            .await;
+        assert_eq!(r.status, 201);
+        assert_eq!(r.body["status"], "rejected");
+        assert!(violation(&r.body, code));
+        assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    }
+}
+#[tokio::test]
+async fn reservations_prevent_overspend_and_execute_reuses_own_reservation() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    let i = f.invoice("60").await;
+    let denied = f.request(&a, &i, "60", "second-request").await;
+    assert!(violation(&denied.body, "BUDGET_EXCEEDED"));
+    assert_eq!(f.execute(&p, "execute-key").await.status, 202);
+    let u = f.usage(&a).await;
+    assert_eq!(u["spentZat"], "60");
+    assert_eq!(u["reservedZat"], "0");
+    assert_eq!(u["pendingCount"], 0);
+}
+#[tokio::test]
+async fn execute_rechecks_current_policy_and_releases_once() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    assert_eq!(f.update(&a, rules("50", "50")).await.status, 200);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    let r = f.execute(&p, "execute-key").await;
+    assert_eq!(r.body["code"], "POLICY_REJECTED");
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    assert_eq!(
+        f.execute(&p, "execute-again").await.body["code"],
+        "INVALID_TRANSITION"
+    );
+    let saved = call(
+        &f.router,
+        "GET",
+        &format!("payments/{}", p["id"].as_str().unwrap()),
+        Some(&f.customer),
+        None,
+        json!({}),
+    )
+    .await
+    .body;
+    assert_eq!(saved["decision"]["policyVersion"], 2);
+    assert!(violation(&saved, "CAP_EXCEEDED"));
+    let operations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(operations, 0);
+}
+#[tokio::test]
+async fn pause_before_execute_releases_reservation() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    call(
+        &f.router,
+        "PATCH",
+        &format!("agents/{}", a["id"].as_str().unwrap()),
+        Some(&f.customer),
+        None,
+        json!({"status":"paused"}),
+    )
+    .await;
+    assert_eq!(
+        f.execute(&p, "execute-key").await.body["code"],
+        "POLICY_REJECTED"
+    );
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+}
+#[tokio::test]
+async fn request_replay_returns_original_bytes_even_after_execution() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "100").await;
+    let i = f.invoice("60").await;
+    let first = f.request(&a, &i, "60", "request-key").await;
+    f.execute(&first.body, "execute-key").await;
+    let replay = f.request(&a, &i, "60", "request-key").await;
+    assert_eq!(replay.status, 201);
+    assert!(replay.replay);
+    assert_eq!(first.raw, replay.raw);
+    assert_eq!(
+        f.request(&a, &i, "59", "request-key").await.body["code"],
+        "IDEMPOTENCY_MISMATCH"
+    );
+    assert_eq!(f.usage(&a).await["spentZat"], "60");
+}
+#[tokio::test]
+async fn concurrent_different_requests_never_jointly_overspend() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "100").await;
+    let i = f.invoice("60").await;
+    let j = f.invoice("60").await;
+    let (x, y) = tokio::join!(
+        f.request(&a, &i, "60", "request-one"),
+        f.request(&a, &j, "60", "request-two")
+    );
+    assert_eq!((x.status, y.status), (201, 201));
+    assert_eq!(
+        [&x.body, &y.body]
+            .iter()
+            .filter(|p| p["status"] == "authorized")
+            .count(),
+        1
+    );
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+}
+#[tokio::test]
+async fn concurrent_same_key_requests_reserve_once() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "100").await;
+    let i = f.invoice("60").await;
+    let (x, y) = tokio::join!(
+        f.request(&a, &i, "60", "same-key"),
+        f.request(&a, &i, "60", "same-key")
+    );
+    assert_eq!((x.status, y.status), (201, 201));
+    assert_eq!(x.raw, y.raw);
+    assert_ne!(x.replay, y.replay);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+}
+#[tokio::test]
+async fn concurrent_execute_same_key_replays_and_different_key_never_sends_twice() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    let (x, y) = tokio::join!(f.execute(&p, "same-key"), f.execute(&p, "same-key"));
+    assert_eq!((x.status, y.status), (202, 202));
+    assert_eq!(x.raw, y.raw);
+    assert_ne!(x.replay, y.replay);
+    let (x, y) = tokio::join!(
+        f.execute(&p, "other-key-one"),
+        f.execute(&p, "other-key-two")
+    );
+    assert_eq!((x.status, y.status), (202, 202));
+    let operations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(operations, 1);
+    assert_eq!(f.usage(&a).await["spentZat"], "60");
+}
+#[tokio::test]
+async fn concurrent_different_key_first_execution_has_one_operation() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    let (x, y) = tokio::join!(f.execute(&p, "execute-one"), f.execute(&p, "execute-two"));
+    assert_eq!((x.status, y.status), (202, 202));
+    assert_eq!(
+        x.body["walletOperation"]["id"],
+        y.body["walletOperation"]["id"]
+    );
+    let operations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(operations, 1);
+    assert_eq!(f.usage(&a).await["spentZat"], "60");
+}
+#[tokio::test]
+async fn mock_execution_and_verification_never_claim_chain_activity() {
+    let f = Fixture::new().await;
+    let (_, p) = f.payment().await;
+    let r = f.execute(&p, "execute-key").await;
+    assert_eq!(r.status, 202);
+    assert_eq!(r.body["status"], "confirmed");
+    assert!(r.body["txid"].is_null());
+    assert!(r.body["pool"].is_null());
+    assert!(r.body["mockRef"].as_str().unwrap().starts_with("mock_"));
+    assert!(
+        r.body["timeline"].as_array().unwrap().last().unwrap()["note"]
+            .as_str()
+            .unwrap()
+            .contains("MOCK")
+    );
+    let h = call(&f.router, "GET", "health", None, None, json!({}))
+        .await
+        .body;
+    assert_eq!(h["mode"], "mock");
+    assert!(h["chainHeight"].is_null());
+    let v = call(
+        &f.router,
+        "GET",
+        &format!("payments/{}/verification", p["id"].as_str().unwrap()),
+        Some(&f.merchant),
+        None,
+        json!({}),
+    )
+    .await
+    .body;
+    assert_eq!(v["method"], "mock");
+    assert_eq!(v["mock"], true);
+    assert_eq!(v["state"], "received");
+    assert_eq!(v["receivedZat"], "60");
+    let txid: Option<String> = sqlx::query_scalar("SELECT txid FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert!(txid.is_none());
+}
+#[tokio::test]
+async fn acknowledgment_is_signed_persisted_replayed_and_unique() {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let f = Fixture::new().await;
+    let (_, p) = f.payment().await;
+    assert_eq!(
+        f.ack(&p, "early-key", json!({})).await.body["code"],
+        "NOT_YET_RECEIVED"
+    );
+    f.execute(&p, "execute-key").await;
+    let first = f
+        .ack(&p, "ack-key-one", json!({"note":"Mock receipt accepted"}))
+        .await;
+    assert_eq!(first.status, 201);
+    let secret: String =
+        sqlx::query_scalar("SELECT value FROM app_secrets WHERE name='merchant_ack'")
+            .fetch_one(&f.app.pool)
+            .await
+            .unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(
+        json!([p["id"], "60", first.body["at"]])
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(
+        first.body["signature"],
+        format!("mock:hmac-sha256:{:x}", mac.finalize().into_bytes())
+    );
+    let replay = f
+        .ack(&p, "ack-key-one", json!({"note":"Mock receipt accepted"}))
+        .await;
+    assert!(replay.replay);
+    assert_eq!(first.raw, replay.raw);
+    assert_eq!(
+        f.ack(&p, "ack-key-one", json!({"note":"changed"}))
+            .await
+            .body["code"],
+        "IDEMPOTENCY_MISMATCH"
+    );
+    assert_eq!(
+        f.ack(&p, "ack-key-two", json!({})).await.body["code"],
+        "ALREADY_ACKNOWLEDGED"
+    );
+    assert_eq!(
+        f.ack(&p, "ack-key-bad", json!({"note":"x".repeat(281)}))
+            .await
+            .status,
+        400
+    );
+}
+#[tokio::test]
+async fn role_isolation_and_record_scope_are_enforced() {
+    let f = Fixture::new().await;
+    let (_, p) = f.payment().await;
+    for (role, method, path) in [
+        (&f.customer, "GET", "merchant/invoices".into()),
+        (
+            &f.customer,
+            "GET",
+            format!("payments/{}/verification", p["id"].as_str().unwrap()),
+        ),
+        (
+            &f.customer,
+            "POST",
+            format!("payments/{}/acknowledgment", p["id"].as_str().unwrap()),
+        ),
+        (&f.merchant, "GET", "payments".into()),
+        (&f.merchant, "POST", "agents".into()),
+        (
+            &f.merchant,
+            "POST",
+            format!("payments/{}/execute", p["id"].as_str().unwrap()),
+        ),
+    ] {
+        assert_eq!(
+            call(
+                &f.router,
+                method,
+                &path,
+                Some(role),
+                Some("wrong-role"),
+                json!({})
+            )
+            .await
+            .body["code"],
+            "WRONG_CONTEXT"
+        );
+    }
+    sqlx::query("UPDATE records SET owner='other_customer' WHERE kind='payment'")
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &f.router,
+            "GET",
+            &format!("payments/{}", p["id"].as_str().unwrap()),
+            Some(&f.customer),
+            None,
+            json!({})
+        )
+        .await
+        .status,
+        404
+    );
+    sqlx::query(
+        "UPDATE records SET body=json_set(body,'$.merchantId','mer_other') WHERE kind='payment'",
+    )
+    .execute(&f.app.pool)
+    .await
+    .unwrap();
+    assert_eq!(f.ack(&p, "foreign-key", json!({})).await.status, 404);
+}
+#[tokio::test]
+async fn csrf_requires_origin_and_session_bound_token() {
+    let f = Fixture::new().await;
+    for (origin, csrf) in [
+        (None, Some(f.customer.csrf.as_str())),
+        (Some("http://evil.example"), Some(f.customer.csrf.as_str())),
+        (Some(ORIGIN), None),
+        (Some(ORIGIN), Some(f.merchant.csrf.as_str())),
+    ] {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/api/agents")
+            .header("cookie", &f.customer.cookie)
+            .header("idempotency-key", "csrf-key");
+        if let Some(o) = origin {
+            req = req.header("origin", o)
+        }
+        if let Some(c) = csrf {
+            req = req.header("x-csrf-token", c)
+        }
+        let r = decode(
+            f.router
+                .clone()
+                .oneshot(req.body(Body::from("{}")).unwrap())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(r.status, 403);
+        assert_eq!(r.body["code"], "CSRF_FAILED");
+    }
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/session/demo")
+        .body(Body::from(r#"{"context":"customer"}"#))
+        .unwrap();
+    assert_eq!(
+        f.router.clone().oneshot(req).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+}
+#[tokio::test]
+async fn session_rotation_invalidates_old_cookie_and_missing_session_is_unauthorized() {
+    let f = Fixture::new().await;
+    assert_eq!(
+        call(&f.router, "GET", "payments", None, None, json!({}))
+            .await
+            .status,
+        401
+    );
+    assert_eq!(
+        call(
+            &f.router,
+            "POST",
+            "session/demo",
+            Some(&f.customer),
+            None,
+            json!({"context":"merchant"})
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        call(
+            &f.router,
+            "GET",
+            "session",
+            Some(&f.customer),
+            None,
+            json!({})
+        )
+        .await
+        .status,
+        401
+    );
+}
+#[tokio::test]
+async fn validation_rejects_noninteger_money_and_invalid_policy() {
+    let f = Fixture::new().await;
+    for amount in [
+        json!(1.5),
+        json!(1),
+        json!("01"),
+        json!("-1"),
+        json!("1.0"),
+        json!("10000000000000000"),
+    ] {
+        let mut p = rules("100", "100");
+        p["perTxLimitZat"] = amount;
+        assert_eq!(
+            call(
+                &f.router,
+                "POST",
+                "agents",
+                Some(&f.customer),
+                Some("validation-key"),
+                json!({"name":"test","policy":p})
+            )
+            .await
+            .status,
+            400
+        );
+    }
+    for ttl in [29, 86401] {
+        let mut p = rules("100", "100");
+        p["requestTtlSeconds"] = json!(ttl);
+        assert_eq!(
+            call(
+                &f.router,
+                "POST",
+                "agents",
+                Some(&f.customer),
+                Some("validation-key"),
+                json!({"name":"test","policy":p})
+            )
+            .await
+            .status,
+            400
+        );
+    }
+}
+#[tokio::test]
+async fn policy_version_conflict_preserves_history() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    assert_eq!(f.update(&a, rules("70", "100")).await.status, 200);
+    assert_eq!(
+        f.update(&a, rules("10", "10")).await.body["code"],
+        "VERSION_CONFLICT"
+    );
+    let r = f.execute(&p, "execute-key").await;
+    assert_eq!(r.status, 202);
+    assert_eq!(r.body["decision"]["policyVersion"], 2);
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM records WHERE kind='policy'")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM records WHERE kind='decision'")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
+}
+#[tokio::test]
+async fn expiration_releases_unsent_reservation_once() {
+    let f = Fixture::new().await;
+    let (a, p) = f.payment().await;
+    sqlx::query("UPDATE records SET body=json_set(body,'$.expiresAt','2000-01-01T00:00:00Z') WHERE kind='payment' AND id=?").bind(p["id"].as_str().unwrap()).execute(&f.app.pool).await.unwrap();
+    for _ in 0..2 {
+        let u = f.usage(&a).await;
+        assert_eq!(u["reservedZat"], "0");
+        assert_eq!(u["pendingCount"], 0);
+    }
+    assert_eq!(
+        f.execute(&p, "expired-key").await.body["code"],
+        "INVALID_TRANSITION"
+    );
+}
+#[tokio::test]
+async fn concurrent_acknowledgment_has_one_winner() {
+    let f = Fixture::new().await;
+    let (_, p) = f.payment().await;
+    f.execute(&p, "execute-key").await;
+    let (x, y) = tokio::join!(
+        f.ack(&p, "ack-key-one", json!({})),
+        f.ack(&p, "ack-key-two", json!({}))
+    );
+    let mut statuses = [x.status, y.status];
+    statuses.sort();
+    assert_eq!(statuses, [201, 409]);
+}
+
+#[tokio::test]
+async fn acknowledgment_handles_late_mismatched_and_unconfirmed_mock_receipts() {
+    let f = Fixture::new().await;
+    let (_, p) = f.payment().await;
+    f.execute(&p, "execute-key").await;
+    // Inject receipt observations into this isolated mock database; no wallet or chain involved.
+    sqlx::query("UPDATE records SET body=json_set(body,'$.expiresAt','2000-01-01T00:00:00Z') WHERE kind='invoice'").execute(&f.app.pool).await.unwrap();
+    let path = format!("payments/{}/verification", p["id"].as_str().unwrap());
+    let v = call(&f.router, "GET", &path, Some(&f.merchant), None, json!({}))
+        .await
+        .body;
+    assert_eq!(v["state"], "late");
+    assert_eq!(v["late"], true);
+    sqlx::query("UPDATE records SET body=json_set(body,'$.confirmations',0) WHERE kind='payment'")
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        f.ack(&p, "pending-ack", json!({})).await.body["code"],
+        "NOT_YET_RECEIVED"
+    );
+    sqlx::query("UPDATE records SET body=json_set(body,'$.confirmations',1,'$.amountZat','59') WHERE kind='payment'").execute(&f.app.pool).await.unwrap();
+    let v = call(&f.router, "GET", &path, Some(&f.merchant), None, json!({}))
+        .await
+        .body;
+    assert_eq!(v["state"], "amount_mismatch");
+    assert_eq!(v["late"], true);
+    assert_eq!(
+        f.ack(&p, "mismatch-ack", json!({})).await.body["code"],
+        "AMOUNT_MISMATCH"
+    );
+    sqlx::query("UPDATE records SET body=json_set(body,'$.amountZat','60') WHERE kind='payment'")
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(f.ack(&p, "late-ack-key", json!({})).await.status, 201);
+}
+#[tokio::test]
+async fn expired_invoices_and_requests_cannot_reserve_budget() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "100").await;
+    let i = f.invoice("60").await;
+    let r=call(&f.router,"POST","payments/request",Some(&f.customer),Some("expired-request"),json!({"agentId":a["id"],"invoiceId":i["id"],"amountZat":"60","reference":"expired","expiresAt":"2000-01-01T00:00:00Z"})).await;
+    assert!(violation(&r.body, "REQUEST_EXPIRED"));
+    sqlx::query("UPDATE records SET body=json_set(body,'$.expiresAt','2000-01-01T00:00:00Z') WHERE kind='invoice'").execute(&f.app.pool).await.unwrap();
+    let r = f.request(&a, &i, "60", "expired-invoice").await;
+    assert!(violation(&r.body, "INVOICE_NOT_PAYABLE"));
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+}
+#[tokio::test]
+async fn idempotency_keys_are_required_and_scoped_to_operation_and_principal() {
+    let f = Fixture::new().await;
+    for key in [None, Some("short"), Some("")] {
+        assert_eq!(
+            call(
+                &f.router,
+                "POST",
+                "agents",
+                Some(&f.customer),
+                key,
+                json!({"name":"test","policy":rules("100","100")})
+            )
+            .await
+            .status,
+            400
+        );
+    }
+    let body = json!({"name":"test","policy":rules("100","100")});
+    let a = call(
+        &f.router,
+        "POST",
+        "agents",
+        Some(&f.customer),
+        Some("shared-key"),
+        body.clone(),
+    )
+    .await;
+    assert_eq!(a.status, 201);
+    let i = call(
+        &f.router,
+        "POST",
+        "merchant/invoices",
+        Some(&f.merchant),
+        Some("shared-key"),
+        json!({"reference":"test","amountZat":"60"}),
+    )
+    .await;
+    assert_eq!(i.status, 201);
+    assert!(!i.replay);
+    let p = f.request(&a.body, &i.body, "60", "shared-key").await;
+    assert_eq!(p.status, 201);
+    assert!(!p.replay);
+    let replay = call(
+        &f.router,
+        "POST",
+        "agents",
+        Some(&f.customer),
+        Some("shared-key"),
+        body,
+    )
+    .await;
+    assert!(replay.replay);
+    assert_eq!(a.raw, replay.raw);
+}
+#[tokio::test]
+async fn mainnet_disables_demo_bootstrap() {
+    let app = App::open(Config {
+        database_url: "sqlite::memory:".into(),
+        frontend_origin: ORIGIN.into(),
+        network: "mainnet".into(),
+    })
+    .await
+    .unwrap();
+    let r = call(
+        &app.router(),
+        "POST",
+        "session/demo",
+        None,
+        None,
+        json!({"context":"customer"}),
+    )
+    .await;
+    assert_eq!(r.status, 404);
+}
+#[tokio::test]
+async fn demo_rate_limits_use_connection_ip() {
+    use axum::extract::ConnectInfo;
+    use std::net::SocketAddr;
+    let f = Fixture::new().await;
+    for attempt in 0..31 {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/session/demo")
+            .header("origin", ORIGIN)
+            .extension(ConnectInfo("127.0.0.2:1234".parse::<SocketAddr>().unwrap()))
+            .body(Body::from(r#"{"context":"customer"}"#))
+            .unwrap();
+        let r = f.router.clone().oneshot(req).await.unwrap();
+        assert_eq!(r.status().as_u16(), if attempt < 30 { 200 } else { 429 });
+    }
+    // Another IP is not blocked by the first IP's counter.
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/session/demo")
+        .header("origin", ORIGIN)
+        .extension(ConnectInfo("127.0.0.3:1234".parse::<SocketAddr>().unwrap()))
+        .body(Body::from(r#"{"context":"customer"}"#))
+        .unwrap();
+    assert_eq!(
+        f.router.oneshot(req).await.unwrap().status(),
+        StatusCode::OK
+    );
+}
+#[tokio::test]
+async fn cors_allows_only_configured_origin_with_credentials() {
+    let f = Fixture::new().await;
+    for origin in [ORIGIN, "http://evil.example"] {
+        let req = Request::builder()
+            .method("OPTIONS")
+            .uri("/api/agents")
+            .header("origin", origin)
+            .header("access-control-request-method", "POST")
+            .header(
+                "access-control-request-headers",
+                "x-csrf-token,idempotency-key",
+            )
+            .body(Body::empty())
+            .unwrap();
+        let r = f.router.clone().oneshot(req).await.unwrap();
+        assert_eq!(r.headers()["access-control-allow-origin"], ORIGIN);
+        assert_eq!(r.headers()["access-control-allow-credentials"], "true");
+        if origin != ORIGIN {
+            assert_ne!(r.headers()["access-control-allow-origin"], origin);
+        }
+    }
+}
+#[tokio::test]
+async fn acknowledgment_and_signing_key_survive_database_reopen() {
+    let path = std::env::temp_dir().join(format!("veilpay-test-{}.db", uuid::Uuid::new_v4()));
+    let url = format!("sqlite://{}", path.display());
+    let mut f = Fixture::at(&url).await;
+    let (_, p) = f.payment().await;
+    let executed = f.execute(&p, "execute-key").await;
+    let first = f.ack(&p, "acknowledge-key", json!({})).await;
+    assert_eq!(first.status, 201);
+    let secret: String =
+        sqlx::query_scalar("SELECT value FROM app_secrets WHERE name='merchant_ack'")
+            .fetch_one(&f.app.pool)
+            .await
+            .unwrap();
+    f.app.pool.close().await;
+    let app = App::open(Config {
+        database_url: url,
+        frontend_origin: ORIGIN.into(),
+        network: "testnet".into(),
+    })
+    .await
+    .unwrap();
+    f.router = app.clone().router();
+    f.app = app;
+    let restored: String =
+        sqlx::query_scalar("SELECT value FROM app_secrets WHERE name='merchant_ack'")
+            .fetch_one(&f.app.pool)
+            .await
+            .unwrap();
+    assert_eq!(secret, restored);
+    let replay = f.ack(&p, "acknowledge-key", json!({})).await;
+    assert_eq!(replay.status, 201);
+    assert!(replay.replay);
+    assert_eq!(replay.raw, first.raw);
+    let replay = f.execute(&p, "execute-key").await;
+    assert_eq!(replay.raw, executed.raw);
+    assert!(replay.replay);
+    assert_eq!(
+        f.ack(&p, "another-ack-key", json!({})).await.body["code"],
+        "ALREADY_ACKNOWLEDGED"
+    );
+    f.app.pool.close().await;
+    std::fs::remove_file(path).unwrap();
+}
+#[test]
+fn configuration_errors_remain_strings_and_fail_closed() {
+    for (network, origin, expected) in [
+        ("invalid", ORIGIN, "Invalid NETWORK"),
+        (
+            "testnet",
+            "http://localhost\nInjected: bad",
+            "Invalid FRONTEND_ORIGIN",
+        ),
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_veilpay-backend"))
+            .env("NETWORK", network)
+            .env("FRONTEND_ORIGIN", origin)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
+    }
+}

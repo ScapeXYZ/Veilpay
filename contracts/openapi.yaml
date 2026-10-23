@@ -1,0 +1,1405 @@
+openapi: 3.1.0
+info:
+  title: VeilPay API
+  version: 1.1.0-draft
+  description: 'Single API contract for VeilPay (Zecathon 2026, Shielded Payments).
+
+    Rules baked into this contract:
+
+    - Money is always an integer zatoshi string (1 ZEC = 100000000 zat). Never floats.
+
+    - Every status is owned by the backend. The frontend never infers or advances a status.
+
+    - Policy is enforced server-side only. The frontend renders decisions, never makes them.
+
+    - No secret material ever leaves the backend: no seeds, spending keys, full or incoming viewing keys.
+
+    - No txid, address or amount in any URL or query string. Ids are opaque.
+
+    - Merchant IVK lives only in the merchant verification service; no endpoint returns it.
+
+    - Testnet, 1 confirmation by default (configurable server-side).
+
+
+    NORMATIVE (applies to every operation):
+
+
+    ROLES. Every authenticated operation requires a session context. Customer-only: /agents*, /payments/request,
+    GET /payments, GET /payments/{id}, /payments/{id}/execute. Merchant-only: /merchant/*, /payments/{id}/verification,
+    /payments/{id}/acknowledgment. Wrong context returns 403 WRONG_CONTEXT; a record outside the caller''s scope
+    returns 404. POST /session/demo lets anyone mint either role: this is DEMO ISOLATION between two contexts, NOT
+    identity or auth security. Testnet only, no real funds, not for production.
+
+
+    MERCHANT KEY CUSTODY. In this MVP the demo backend acts as the merchant. The merchant incoming viewing key (account-wide)
+    is held server-side by the verification service, so the operator is trusted with ALL incoming receipts to the
+    merchant account. This is NOT browser-local or noncustodial verification. No customer key (spending or viewing)
+    is ever requested, stored or shared. No endpoint returns any key.
+
+
+    IDEMPOTENCY. Every POST that creates or moves state requires Idempotency-Key. Scope = (principal, operation,
+    key). Same scope + same payload: return the ORIGINAL status code and body exactly (e.g. the original 201 for
+    /payments/request), plus header Idempotent-Replay: true; never re-run side effects. Exception: a pre-transition
+    503 WALLET_UNAVAILABLE is NOT cached, so a retry with the same key genuinely retries. Same scope + different
+    payload: 409 IDEMPOTENCY_MISMATCH. Keys retained at least 24h.
+
+
+    EXECUTE IS SINGLE-SEND. Execute atomically moves the payment authorized to submitted (compare-and-set on the
+    payment row) BEFORE calling the wallet. Only the winner of that transition sends. A same-key attempt (including
+    a concurrent one) waits for and replays the ORIGINAL response. Only a DIFFERENT-key duplicate gets the current
+    Payment state as 202. Neither ever triggers a second send.
+
+
+    UNKNOWN OUTCOME. If the wallet call times out or returns an ambiguous error after the transition, the payment
+    stays submitted with outcome unknown (failure.code=OUTCOME_UNKNOWN, retriable=false); the backend reconciles
+    (see WALLET OPERATIONS). Clients must not retry the send, and the backend never automatically resends an ambiguous
+    payment. 503 WALLET_UNAVAILABLE is returned only when the wallet was unreachable BEFORE the transition, payment
+    still authorized, and is safe to retry.
+
+
+    MOCK MODE. When /health mode=mock, the UI shows a persistent MOCK banner. Mock payments never carry an on-chain
+    txid (txid null, mockRef set), pool null, and Verification.method=mock with mock=true. merchant_ivk_scan is
+    only ever reported in real mode.
+
+
+    BUDGET RESERVATION. Budget checks run atomically per agent (lock the agent''s budget row, check and reserve
+    in the same transaction), so concurrent DIFFERENT payments for one agent are serialized and can never jointly
+    overspend.
+
+    - At request: check spentZat + reservedZat + amount <= totalBudgetZat and amount <= perTxLimitZat; if authorized,
+    reserve amount in the same transaction.
+
+    - At execute: REUSE the payment''s own reservation. reservedOther = reservedZat - ownReservation; check spentZat
+    + reservedOther + amount <= totalBudgetZat and amount <= perTxLimitZat. Never reserve the same amount twice;
+    adjust by an atomic delta only if the amount changed.
+
+    - On policy rejection (at request or at execute) any reservation for that payment is released atomically in
+    the same transaction.
+
+    - The reservation is held through authorized, submitted, confirming and OUTCOME_UNKNOWN; it becomes spent on
+    confirmed, and is released only on rejected, a definitive failed, or expired.
+
+
+    WALLET OPERATIONS (durable). Every send is a durable wallet_operation row written in the SAME transaction as
+    the authorized->submitted CAS, BEFORE the wallet is called: {id, paymentId, attempt (always 1), backend, state,
+    walletOpRef, txid, createdAt, updatedAt}. Operation states: pending (row written, wallet not yet acknowledged)
+    -> broadcast (wallet returned a txid or operation id) -> mined -> final, or -> failed_definitive, or -> unknown.
+    On every process start and on a timer, a reconciler loads all operations in pending/broadcast/unknown and resolves
+    each from the wallet''s transaction history and the chain (by walletOpRef/txid and the invoice payTo + amount),
+    never by sending. A payment leaves unknown only when the reconciler finds either the transaction (-> confirming/confirmed)
+    or definitive proof it was never created and cannot be (-> failed with a definitive code). There is exactly
+    one wallet operation per payment; a second send for the same payment is impossible by contract. Semantics are
+    fail-closed AT-MOST-ONCE delivery, not guaranteed delivery. A payment unresolved after the reconcile window
+    (default 2h, configurable) stays unknown and is surfaced for manual operator action; it is never auto-resent.
+
+
+    FAILURES. Definitive (reservation released, payment failed): REJECTED_BY_WALLET_PRE_BROADCAST (wallet rejected
+    before creating a tx, e.g. INSUFFICIENT_FUNDS, invalid address), EXPIRED_UNMINED (tx expiry height passed, tx
+    confirmed absent from chain and mempool by the reconciler), BROADCAST_REJECTED (node rejected the tx and the
+    wallet confirms it is not pending). Uncertain (reservation HELD, status stays submitted, failure.code=OUTCOME_UNKNOWN):
+    timeouts, connection drops, crashes after the operation row is written, any wallet error that does not prove
+    the tx was never created. Only definitive failures are terminal.
+
+
+    POLICY, PAUSE AND RESERVATIONS. Policy is versioned; every Decision records policyVersion. Updates never rewrite
+    history:
+
+    - requested/authorized (not yet sent): execute re-evaluates against the CURRENT policy version. If the new policy
+    (lower cap, smaller budget, merchant removed) no longer allows it, execute rejects atomically (POLICY_REJECTED)
+    and releases the reservation.
+
+    - PUT /policy that lowers totalBudgetZat below spentZat + reservedZat is accepted, but blocks all new authorizations
+    until usage fits; it never cancels payments already submitted/confirming/unknown.
+
+    - Pausing an agent: new requests are rejected (AGENT_PAUSED), authorized-but-unsent payments are rejected at
+    execute and released. Payments already submitted, confirming or unknown are NOT cancelled or reversed (a broadcast
+    tx cannot be recalled); they keep their reservation and resolve normally.
+
+    - Shielded sends cannot be reversed. After broadcast, no policy change, pause or merchant removal affects the
+    outcome; the UI says so.
+
+
+    CHAIN EVENTS. A chain watcher, separate from the reconciler, tracks every payment in confirming or confirmed
+    (and every invoice with a receipt) on each new block: it recomputes confirmations from the tip and detects reorgs
+    by checking the tx''s block hash is still in the best chain. Tracking continues until watchDepth (default 100
+    blocks, configurable) past the tx''s block; after that the payment is treated as final for this app. There is
+    NO absolute finality: a reorg deeper than watchDepth is not tracked automatically and is surfaced to the operator
+    via /health.
+
+    - Reorg accounting (under the per-agent budget lock, each move applied exactly once, guarded by a per-payment
+    accounting_state of spent|reserved|released): confirmed -> confirming moves amount spent -> reserved once; reconfirmation
+    moves reserved -> spent once; definitive EXPIRED_UNMINED moves reserved -> released once. A move whose source
+    state does not match is a no-op, so replays and repeated watcher passes never double count.
+
+    - Reorg: if a payment''s tx drops out of the best chain, confirmed or confirming moves back to confirming (confirmations
+    recomputed, possibly 0, timeline event "reorg"). If the tx is later found absent from chain and mempool past
+    its expiry height, it becomes failed EXPIRED_UNMINED and the reservation is released. Verification follows the
+    same rule (received -> pending). This is the only backward transition in the status machine.
+
+    - Late payment: a receipt to an invoice address after expiresAt is still recorded; Verification.state=late (amount
+    and confirmations shown). The invoice becomes paid_late, never silently paid. The merchant may acknowledge a
+    late receipt only when confirmations >= confirmationsRequired AND receivedZat equals expectedZat exactly.
+
+    - State precedence when several apply: amount_mismatch > late > received > pending > not_seen. A late receipt
+    with the wrong amount is amount_mismatch (late=true flag set), and cannot be acknowledged.
+
+    - Invoice expiry: an open invoice past expiresAt becomes expired; new payment requests against it are rejected
+    (INVOICE_NOT_PAYABLE). A payment already submitted before expiry is unaffected and resolves normally (may surface
+    as late).
+
+    - Under/overpayment: Verification.state=amount_mismatch with expectedZat and receivedZat; never auto-marked
+    received.
+
+
+    SESSIONS, CSRF, COOKIES. The session cookie is named __Host-veilpay_session: HttpOnly, Secure, SameSite=Strict,
+    Path=/, no Domain attribute (required by the __Host- prefix), max age 8h, rotated on context switch. Every state-changing
+    request (POST/PUT/PATCH/DELETE) must carry the header X-CSRF-Token equal to the csrfToken returned by /session/demo
+    or GET /session (double-submit bound to the session), and an Origin header matching the configured frontend
+    origin; otherwise 403 CSRF_FAILED. CORS allows only that origin, with credentials. BOOTSTRAP EXCEPTION: POST
+    /session/demo is the only state-changing route exempt from X-CSRF-Token (no session exists yet) and from Idempotency-Key
+    (each call mints a fresh session; repeats are harmless and rate-limited). It still requires an Origin header
+    matching the frontend origin (403 CSRF_FAILED otherwise) and is rate-limited per IP. Demo role switching is
+    enabled only when the backend runs with network=testnet or regtest; on mainnet the endpoint returns 404. It
+    is not production authentication.
+
+
+    BREAKING CHANGE v1.0 -> v1.1 (failure codes). Removed and mapped: WALLET_ERROR -> REJECTED_BY_WALLET_PRE_BROADCAST
+    if the wallet proves no tx was created, else OUTCOME_UNKNOWN; BROADCAST_FAILED -> BROADCAST_REJECTED (definitive)
+    or OUTCOME_UNKNOWN (uncertain); EXPIRED_BEFORE_MINING -> EXPIRED_UNMINED. INSUFFICIENT_FUNDS unchanged. Also
+    new: Verification.state late, Invoice.status paid_late, required failure.definitive, required X-CSRF-Token header,
+    cookie renamed to __Host-veilpay_session.
+
+    '
+servers:
+- url: http://localhost:4000/api
+  description: local backend
+tags:
+- name: system
+- name: session
+- name: agents
+- name: payments
+- name: merchant
+security:
+- session: []
+paths:
+  /health:
+    get:
+      tags:
+      - system
+      summary: Liveness + chain/wallet readiness
+      security: []
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /session/demo:
+    post:
+      tags:
+      - session
+      summary: Issue the seeded demo session for one context
+      description: Returns an httpOnly cookie. Customer and merchant contexts are separate; a customer session cannot
+        call merchant routes and vice versa. Origin-checked and rate-limited. Available only when network is testnet
+        or regtest (404 otherwise). Not production authentication. Exempt from X-CSRF-Token and Idempotency-Key
+        (bootstrap exception), Origin still required.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - context
+              properties:
+                context:
+                  type: string
+                  enum:
+                  - customer
+                  - merchant
+      responses:
+        '200':
+          description: session issued (Set-Cookie __Host-veilpay_session; HttpOnly; Secure; SameSite=Strict; Path=/;
+            no Domain)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: demo sessions disabled (non-test network)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          description: rate limited
+  /session:
+    get:
+      tags:
+      - session
+      summary: Current session context
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /agents:
+    post:
+      tags:
+      - agents
+      summary: Register an agent (customer context)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCreate'
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: IDEMPOTENCY_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      x-role: customer
+      security:
+      - session: []
+  /agents/{agentId}:
+    parameters:
+    - $ref: '#/components/parameters/AgentId'
+    get:
+      tags:
+      - agents
+      summary: Agent with live policy usage
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: customer
+      security:
+      - session: []
+    patch:
+      tags:
+      - agents
+      summary: Pause or resume an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - status
+              properties:
+                status:
+                  $ref: '#/components/schemas/AgentStatus'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-role: customer
+      security:
+      - session: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+  /agents/{agentId}/policy:
+    parameters:
+    - $ref: '#/components/parameters/AgentId'
+    get:
+      tags:
+      - agents
+      summary: Current policy (versioned)
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-role: customer
+      security:
+      - session: []
+    put:
+      tags:
+      - agents
+      summary: Replace policy; bumps version. Requires current version (optimistic lock).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyUpdate'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: policy version conflict (code VERSION_CONFLICT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-role: customer
+      security:
+      - session: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+  /payments/request:
+    post:
+      tags:
+      - payments
+      summary: Agent submits a payment request; backend evaluates policy
+      description: 'Always returns a Payment with a decision. Rejection is a normal outcome: 201 + status=rejected
+        + decision.violations. Replay with the same Idempotency-Key + same body returns the ORIGINAL response (the
+        same 201 + body) with header Idempotent-Replay: true. Same key + different body returns 409 IDEMPOTENCY_MISMATCH.'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequestCreate'
+      responses:
+        '201':
+          description: 'evaluated (authorized or rejected); also returned verbatim on same-key replay with header
+            Idempotent-Replay: true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+          headers:
+            Idempotent-Replay:
+              schema:
+                type: string
+                enum:
+                - 'true'
+              description: present on replay
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: IDEMPOTENCY_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: customer
+      security:
+      - session: []
+  /payments:
+    get:
+      tags:
+      - payments
+      summary: List payments for the session's agent (customer context)
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/PaymentStatus'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  nextCursor:
+                    type:
+                    - string
+                    - 'null'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: customer
+      security:
+      - session: []
+  /payments/{paymentId}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    get:
+      tags:
+      - payments
+      summary: One payment with decision + timeline
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: customer
+      security:
+      - session: []
+  /payments/{paymentId}/execute:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    post:
+      tags:
+      - payments
+      summary: Execute an authorized payment (real shielded send)
+      description: Only from status=authorized. Policy and budget re-checked atomically (see BUDGET RESERVATION).
+        Atomic authorized->submitted CAS before the wallet call (see EXECUTE IS SINGLE-SEND). A same-key replay
+        (including a concurrent one) waits for and returns the ORIGINAL response. A duplicate with a DIFFERENT key,
+        or a losing concurrent attempt, returns 202 with the CURRENT Payment state and never sends. A wallet timeout
+        after the transition leaves status=submitted with failure.code=OUTCOME_UNKNOWN (no retry, backend reconciles).
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '202':
+          description: submitted; also the ORIGINAL response on same-key replay; for a DIFFERENT-key duplicate,
+            the current Payment state (no send)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: INVALID_TRANSITION (not authorized) or policy now violated (POLICY_REJECTED, payment moves
+            to rejected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: 'WALLET_UNAVAILABLE: wallet unreachable BEFORE the transition; payment stays authorized;
+            this response is NOT cached, so a retry with the same key retries. Never returned after the transition.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: customer
+      security:
+      - session: []
+  /payments/{paymentId}/verification:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    get:
+      tags:
+      - merchant
+      summary: Merchant-side receipt verification for this payment's invoice (merchant context)
+      description: 'Computed by the merchant verification service using the merchant''s incoming viewing key,
+
+        held only server-side in that service. Returns only facts about the expected receipt for THIS
+
+        invoice. Never returns the IVK, other receipts, the customer''s address or wallet history.
+
+        A merchant can only read payments addressed to its own merchantId; anything else is 404.
+
+        '
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-role: merchant
+      security:
+      - session: []
+  /payments/{paymentId}/acknowledgment:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    post:
+      tags:
+      - merchant
+      summary: Merchant acknowledges receipt (only after verification says received)
+      description: The acknowledgment is a signed merchant statement, NOT a cryptographic proof of settlement. The
+        UI must label it that way. Allowed when Verification.state=received, or state=late with confirmations >=
+        confirmationsRequired and receivedZat == expectedZat. Never on amount_mismatch.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 280
+      responses:
+        '201':
+          description: acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Acknowledgment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: NOT_YET_RECEIVED, ALREADY_ACKNOWLEDGED or AMOUNT_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-role: merchant
+      security:
+      - session: []
+  /merchant/invoices:
+    post:
+      tags:
+      - merchant
+      summary: Create an invoice; backend derives a fresh merchant receiving address
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reference
+              - amountZat
+              properties:
+                reference:
+                  type: string
+                  maxLength: 64
+                  example: INV-1001
+                amountZat:
+                  $ref: '#/components/schemas/Zatoshi'
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: IDEMPOTENCY_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      x-role: merchant
+      security:
+      - session: []
+    get:
+      tags:
+      - merchant
+      summary: List this merchant's invoices
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-role: merchant
+      security:
+      - session: []
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-veilpay_session
+      description: HttpOnly, Secure, SameSite=Strict, Path=/, no Domain demo session cookie; carries context customer|merchant.
+  parameters:
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^agt_[A-Za-z0-9]{10,32}$
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^pay_[A-Za-z0-9]{10,32}$
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    Invalid:
+      description: VALIDATION_FAILED
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: UNAUTHENTICATED
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: WRONG_CONTEXT (wrong role) or CSRF_FAILED (missing/invalid X-CSRF-Token or Origin)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: NOT_FOUND (also returned for records outside the caller's scope, to avoid leaking existence)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Zatoshi:
+      type: string
+      pattern: ^(0|[1-9][0-9]{0,15})$
+      description: Integer zatoshi as a decimal string. 1 ZEC = "100000000".
+      example: '25000000'
+    Health:
+      type: object
+      required:
+      - status
+      - network
+      - wallet
+      - chainHeight
+      - confirmationsRequired
+      - walletBackend
+      - mode
+      - reconciler
+      - chainWatcher
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+          - down
+        network:
+          type: string
+          enum:
+          - testnet
+          - regtest
+          - mainnet
+        wallet:
+          type: string
+          enum:
+          - ready
+          - syncing
+          - unavailable
+        walletBackend:
+          type: string
+          enum:
+          - zingolib
+          - zallet
+          - mock
+        chainHeight:
+          type:
+          - integer
+          - 'null'
+        confirmationsRequired:
+          type: integer
+          minimum: 1
+        mode:
+          type: string
+          enum:
+          - real
+          - mock
+          description: Required. mock = UI shows a persistent MOCK banner; no on-chain txids exist.
+        reconciler:
+          type: object
+          properties:
+            lastRunAt:
+              type:
+              - string
+              - 'null'
+              format: date-time
+            unresolved:
+              type: integer
+          required:
+          - lastRunAt
+          - unresolved
+        chainWatcher:
+          type: object
+          required:
+          - lastBlockAt
+          - watchDepth
+          - deepReorgAlert
+          properties:
+            lastBlockAt:
+              type:
+              - string
+              - 'null'
+              format: date-time
+            watchDepth:
+              type: integer
+            deepReorgAlert:
+              type: boolean
+    Session:
+      type: object
+      required:
+      - context
+      - expiresAt
+      - csrfToken
+      properties:
+        context:
+          type: string
+          enum:
+          - customer
+          - merchant
+        agentId:
+          type:
+          - string
+          - 'null'
+        merchantId:
+          type:
+          - string
+          - 'null'
+        expiresAt:
+          type: string
+          format: date-time
+        csrfToken:
+          type: string
+          description: Send as X-CSRF-Token on every state-changing request.
+    AgentStatus:
+      type: string
+      enum:
+      - active
+      - paused
+    AgentCreate:
+      type: object
+      required:
+      - name
+      - policy
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        policy:
+          $ref: '#/components/schemas/PolicyRules'
+    Agent:
+      type: object
+      required:
+      - id
+      - name
+      - status
+      - policy
+      - usage
+      - createdAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/AgentStatus'
+        policy:
+          $ref: '#/components/schemas/Policy'
+        usage:
+          $ref: '#/components/schemas/PolicyUsage'
+        createdAt:
+          type: string
+          format: date-time
+    PolicyRules:
+      type: object
+      required:
+      - perTxLimitZat
+      - totalBudgetZat
+      - allowedMerchantIds
+      properties:
+        perTxLimitZat:
+          $ref: '#/components/schemas/Zatoshi'
+        totalBudgetZat:
+          $ref: '#/components/schemas/Zatoshi'
+        allowedMerchantIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        requestTtlSeconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+          default: 900
+    Policy:
+      allOf:
+      - $ref: '#/components/schemas/PolicyRules'
+      - type: object
+        required:
+        - version
+        - updatedAt
+        properties:
+          version:
+            type: integer
+            minimum: 1
+          updatedAt:
+            type: string
+            format: date-time
+    PolicyUpdate:
+      allOf:
+      - $ref: '#/components/schemas/PolicyRules'
+      - type: object
+        required:
+        - expectedVersion
+        properties:
+          expectedVersion:
+            type: integer
+            minimum: 1
+    PolicyUsage:
+      type: object
+      required:
+      - spentZat
+      - reservedZat
+      - remainingZat
+      - approvedCount
+      - rejectedCount
+      - pendingCount
+      properties:
+        spentZat:
+          $ref: '#/components/schemas/Zatoshi'
+        reservedZat:
+          $ref: '#/components/schemas/Zatoshi'
+          description: authorized/submitted/confirming not yet confirmed
+        remainingZat:
+          $ref: '#/components/schemas/Zatoshi'
+        approvedCount:
+          type: integer
+        rejectedCount:
+          type: integer
+        pendingCount:
+          type: integer
+    PaymentRequestCreate:
+      type: object
+      required:
+      - agentId
+      - invoiceId
+      - amountZat
+      - reference
+      properties:
+        agentId:
+          type: string
+        invoiceId:
+          type: string
+          description: The merchant invoice; backend resolves merchantId and destination from it.
+        amountZat:
+          $ref: '#/components/schemas/Zatoshi'
+        reference:
+          type: string
+          maxLength: 64
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional; capped by policy requestTtlSeconds.
+    PaymentStatus:
+      type: string
+      enum:
+      - requested
+      - rejected
+      - authorized
+      - submitted
+      - confirming
+      - confirmed
+      - failed
+      - expired
+      description: "Backend-owned, one-way transitions:\n  requested  -> rejected | authorized\n  authorized ->\
+        \ submitted | rejected (re-check at execute) | expired\n  submitted  -> confirming | failed\n  confirming\
+        \ -> confirmed | failed\n  confirmed  -> confirming (reorg only)\n  confirming -> failed (only EXPIRED_UNMINED\
+        \ after a reorg)\nTerminal: rejected, failed, expired. confirmed is final once past the configured finality\
+        \ depth.\nUI copy: authorized = \"approved, not paid\"; confirming = \"sent, awaiting confirmation\";\n\
+        only confirmed = \"paid\".\n"
+    ViolationCode:
+      type: string
+      enum:
+      - CAP_EXCEEDED
+      - BUDGET_EXCEEDED
+      - MERCHANT_NOT_ALLOWED
+      - AGENT_PAUSED
+      - REQUEST_EXPIRED
+      - AMOUNT_MISMATCH
+      - INVOICE_NOT_PAYABLE
+      - POLICY_VERSION_CHANGED
+    Violation:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          $ref: '#/components/schemas/ViolationCode'
+        message:
+          type: string
+          example: 'Payment blocked: requested amount exceeds the authorized transaction limit.'
+        limitZat:
+          $ref: '#/components/schemas/Zatoshi'
+        requestedZat:
+          $ref: '#/components/schemas/Zatoshi'
+    Decision:
+      type: object
+      required:
+      - id
+      - result
+      - policyVersion
+      - evaluatedAt
+      - violations
+      - auditHash
+      properties:
+        id:
+          type: string
+        result:
+          type: string
+          enum:
+          - authorized
+          - rejected
+        policyVersion:
+          type: integer
+        evaluatedAt:
+          type: string
+          format: date-time
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Violation'
+        auditHash:
+          type: string
+          description: sha256 of (request, policyVersion, result). Audit trail only, not proof of enforcement.
+    TimelineEvent:
+      type: object
+      required:
+      - status
+      - kind
+      - at
+      properties:
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        at:
+          type: string
+          format: date-time
+        note:
+          type: string
+        kind:
+          type: string
+          enum:
+          - status
+          - reorg
+          - reconciled
+          - policy_changed
+          - agent_paused
+          - late_receipt
+    Payment:
+      type: object
+      required:
+      - id
+      - agentId
+      - merchantId
+      - invoiceId
+      - amountZat
+      - reference
+      - status
+      - decision
+      - timeline
+      - createdAt
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        merchantId:
+          type: string
+        merchantName:
+          type: string
+        invoiceId:
+          type: string
+        amountZat:
+          $ref: '#/components/schemas/Zatoshi'
+        reference:
+          type: string
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        decision:
+          $ref: '#/components/schemas/Decision'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+        pool:
+          type:
+          - string
+          - 'null'
+          enum:
+          - orchard
+          - sapling
+          - null
+          description: Shielded pool used, once submitted.
+        confirmations:
+          type: integer
+          minimum: 0
+        txid:
+          type:
+          - string
+          - 'null'
+          description: 'Real mode only: on-chain txid, customer context, after submit, never in URLs. Always null
+            in mock mode.'
+        failure:
+          type:
+          - object
+          - 'null'
+          properties:
+            code:
+              type: string
+              enum:
+              - REJECTED_BY_WALLET_PRE_BROADCAST
+              - INSUFFICIENT_FUNDS
+              - BROADCAST_REJECTED
+              - EXPIRED_UNMINED
+              - OUTCOME_UNKNOWN
+            message:
+              type: string
+            retriable:
+              type: boolean
+            definitive:
+              type: boolean
+              description: true = terminal failure, reservation released. false = uncertain (OUTCOME_UNKNOWN), reservation
+                held.
+          required:
+          - code
+          - definitive
+          - retriable
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        privacy:
+          $ref: '#/components/schemas/PrivacyLens'
+        mockRef:
+          type:
+          - string
+          - 'null'
+          description: 'Mock mode only: synthetic reference, never formatted like a txid.'
+        walletOperation:
+          $ref: '#/components/schemas/WalletOperation'
+    PrivacyLens:
+      type: object
+      description: Drives the "what's hidden" panel. Static per pool, filled by backend.
+      properties:
+        publicChainSees:
+          type: array
+          items:
+            type: string
+          example:
+          - txid
+          - block time
+          - fee
+          - transaction structure
+        hiddenOnChain:
+          type: array
+          items:
+            type: string
+          example:
+          - amount
+          - sender address
+          - recipient address
+          - memo
+        merchantSees:
+          type: array
+          items:
+            type: string
+          example:
+          - amount received
+          - invoice reference
+          - confirmations
+        customerSees:
+          type: array
+          items:
+            type: string
+    Invoice:
+      type: object
+      required:
+      - id
+      - merchantId
+      - reference
+      - amountZat
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+        merchantId:
+          type: string
+        reference:
+          type: string
+        amountZat:
+          $ref: '#/components/schemas/Zatoshi'
+        payTo:
+          type: string
+          description: Fresh merchant shielded receiving address for this invoice. Returned to the paying agent
+            flow only, never in URLs.
+        status:
+          type: string
+          enum:
+          - open
+          - paid
+          - paid_late
+          - expired
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    Verification:
+      type: object
+      required:
+      - paymentId
+      - invoiceId
+      - state
+      - confirmations
+      - confirmationsRequired
+      - checkedAt
+      - method
+      - mock
+      properties:
+        paymentId:
+          type: string
+        invoiceId:
+          type: string
+        reference:
+          type: string
+        state:
+          type: string
+          enum:
+          - not_seen
+          - pending
+          - received
+          - late
+          - amount_mismatch
+          - expired
+        expectedZat:
+          $ref: '#/components/schemas/Zatoshi'
+        receivedZat:
+          $ref: '#/components/schemas/Zatoshi'
+        confirmations:
+          type: integer
+        confirmationsRequired:
+          type: integer
+        method:
+          type: string
+          enum:
+          - merchant_ivk_scan
+          - mock
+          description: 'merchant_ivk_scan (real mode only): operator-held, account-wide merchant IVK scan, server-side;
+            custodial, not a per-payment disclosure proof. mock: simulated, no chain read.'
+        checkedAt:
+          type: string
+          format: date-time
+        mock:
+          type: boolean
+        late:
+          type: boolean
+    Acknowledgment:
+      type: object
+      required:
+      - paymentId
+      - merchantId
+      - at
+      - signature
+      properties:
+        paymentId:
+          type: string
+        merchantId:
+          type: string
+        at:
+          type: string
+          format: date-time
+        note:
+          type: string
+        signature:
+          type: string
+          description: Merchant service signature over (paymentId, receivedZat, at). A statement, not chain proof.
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          enum:
+          - VALIDATION_FAILED
+          - UNAUTHENTICATED
+          - WRONG_CONTEXT
+          - NOT_FOUND
+          - VERSION_CONFLICT
+          - IDEMPOTENCY_MISMATCH
+          - INVALID_TRANSITION
+          - POLICY_REJECTED
+          - NOT_YET_RECEIVED
+          - ALREADY_ACKNOWLEDGED
+          - WALLET_UNAVAILABLE
+          - INTERNAL
+          - OUTCOME_UNKNOWN
+          - CSRF_FAILED
+          - AMOUNT_MISMATCH
+        message:
+          type: string
+          description: Safe for display. Never contains addresses, keys, amounts of other records or stack traces.
+        details:
+          type: object
+          additionalProperties: true
+        requestId:
+          type: string
+    WalletOperation:
+      type:
+      - object
+      - 'null'
+      description: Durable send record (customer context only). Never contains keys or addresses.
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum:
+          - pending
+          - broadcast
+          - mined
+          - final
+          - failed_definitive
+          - unknown
+        attempt:
+          type: integer
+          const: 1
+        lastReconciledAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        needsOperator:
+          type: boolean
+          description: true when unresolved past the reconcile window; never auto-resent.
+      required:
+      - id
+      - state
+      - attempt
+      - needsOperator
