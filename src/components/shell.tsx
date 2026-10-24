@@ -6,12 +6,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { isMockClient } from "@/lib/api";
-import { useApi, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
+import { errorText, useApi, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
 import { fmtTime } from "@/lib/present";
 import { MockBanner, SourceTag } from "./source";
-import { Badge, Button } from "./ui";
+import { Badge, Button, ErrorBox, Skeleton } from "./ui";
 import { DemoGuide } from "./demo-guide";
 import { MockControlsPanel } from "./mock-controls";
+import { RouteAnnouncements } from "./route-announcements";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -76,6 +77,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const { data: h } = useHealth();
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-amber-400 focus:p-3 focus:text-zinc-950">Skip to main content</a>
+      <RouteAnnouncements />
       <MockBanner />
       <header className="border-b border-zinc-900 bg-zinc-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -106,13 +109,13 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
       </header>
-      <main className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6">
         <HealthStrip />
         <DemoGuide />
         {children}
       </main>
       <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs text-zinc-600">
-        Built against OpenAPI v1.1 (frozen). Testnet only. Demo sessions are role isolation, not authentication.
+        Built against contracts/openapi.yaml. Testnet only. Demo sessions are role isolation, not authentication.
         {isMockClient(api) && <MockControlsPanel />}
       </footer>
     </div>
@@ -135,9 +138,13 @@ export function PageHeader({ title, subtitle, right }: { title: string; subtitle
 }
 
 export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"; children: ReactNode }) {
-  const { data: s, isLoading } = useSession();
+  const { data: s, isLoading, error, refetch } = useSession();
   const sw = useSwitchContext();
-  if (isLoading || !s) return null;
+  if (isLoading) return <Skeleton className="h-40" />;
+  if (error || !s) return <ErrorBox>
+    <p>Could not load your session. {errorText(error)}</p>
+    <Button variant="secondary" onClick={() => refetch()}>Try again</Button>
+  </ErrorBox>;
   if (s.context !== ctx)
     return (
       <div data-testid="wrong-context" className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-sm text-zinc-300">

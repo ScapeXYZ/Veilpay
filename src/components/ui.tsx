@@ -47,6 +47,7 @@ export function Button({ variant = "primary", busy, className, children, disable
     <button
       {...rest}
       disabled={disabled || busy}
+      aria-busy={busy || undefined}
       className={clsx(
         "inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" && "bg-amber-400 text-zinc-950 hover:bg-amber-300",
@@ -110,7 +111,7 @@ export function Notice({ tone = "info", title, children, testId }: { tone?: Tone
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={clsx("animate-pulse rounded-lg bg-zinc-800/70", className)} />;
+  return <div role="status" aria-label="Loading" aria-busy="true" className={clsx("animate-pulse rounded-lg bg-zinc-800/70", className)} />;
 }
 
 export function Meter({ parts, total }: { parts: { pct: number; cls: string; label: string }[]; total: string }) {

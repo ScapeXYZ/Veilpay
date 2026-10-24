@@ -1,0 +1,51 @@
+"use client";
+
+import { useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import type { Invoice } from "@/lib/contract/schemas";
+import { formatZec } from "@/lib/zat";
+import { fmtTime } from "@/lib/present";
+import { Badge, Button, ErrorBox } from "./ui";
+
+/** ZIP-321 amount is decimal ZEC, derived without floating point. Never invent an address. */
+export function invoicePaymentUri(invoice: Invoice): string | null {
+  if (!invoice.payTo) return null;
+  const amount = formatZec(invoice.amountZat, { unit: false }).replaceAll(",", "");
+  return `zcash:${encodeURIComponent(invoice.payTo)}?amount=${amount}&label=${encodeURIComponent(invoice.reference)}`;
+}
+
+export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: boolean }) {
+  const uri = invoicePaymentUri(invoice);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const payable = invoice.status === "open";
+  return (
+    <div className="mt-4 rounded-xl border border-zinc-700 bg-zinc-950 p-4" data-testid="invoice-request">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{invoice.reference}</h3>
+        <Badge tone={payable ? "info" : "neutral"}>{invoice.status.replaceAll("_", " ")}</Badge>
+      </div>
+      <p className="mt-1 break-all font-mono text-xs text-zinc-400">{invoice.id}</p>
+      <p className="mt-2 text-sm">Request {formatZec(invoice.amountZat)}</p>
+      {uri && payable ? (
+        <>
+          <div className="mx-auto my-4 w-fit rounded-xl bg-white p-4">
+            <QRCodeSVG value={uri} size={176} level="M" title={demo ? "Demo invoice QR, not a real payment address" : "Scan this invoice with a Zcash wallet"} />
+          </div>
+          <p className="mb-3 text-xs text-zinc-300">{demo ? "DEMO QR ONLY. This is a simulated address. Do not send funds." : "Scan with a Zcash wallet, or copy the payment request. Never pay an invoice twice."}</p>
+          <label className="block text-xs text-zinc-400">Payment request
+            <textarea readOnly value={uri} rows={3} className="mt-1 w-full resize-none rounded-lg border border-zinc-700 bg-zinc-900 p-2 font-mono text-xs text-zinc-200" />
+          </label>
+          <Button className="mt-2" variant="secondary" onClick={async () => {
+            try { await navigator.clipboard.writeText(uri); setCopied(true); setError(null); }
+            catch { setError("Copy is unavailable. Select the payment request above and copy it manually."); }
+          }}>{copied ? "Copied payment request" : "Copy payment request"}</Button>
+          <p role="status" className="mt-2 text-xs text-emerald-300">{copied ? "Ready to share with your customer." : ""}</p>
+        </>
+      ) : <p className="mt-3 text-sm text-zinc-300">{!payable ? "This invoice is no longer payable. Create a new invoice for a new payment." : "Waiting for the backend to provide a receiving address. No payment QR is available yet."}</p>}
+      <p className="mt-2 text-xs text-zinc-400">Sharing a request does not confirm payment. Status changes only when the backend verifies receipt.</p>
+      {invoice.expiresAt && <p className="mt-1 text-xs text-zinc-400">Expires: {fmtTime(invoice.expiresAt)}</p>}
+      {error && <ErrorBox>{error}</ErrorBox>}
+    </div>
+  );
+}

@@ -16,6 +16,11 @@ const renderDetail = (p: Payment) =>
   );
 
 describe("PaymentDetail", () => {
+  it("labels the wallet operation with readable operator-review copy", () => {
+    renderDetail(seed("pay_operator00001"));
+    expect(screen.getByTestId("wallet-op")).toHaveTextContent("Requires operator review · attempt 1");
+    expect(screen.getByTestId("wallet-op")).not.toHaveTextContent(/Unknown|needsOperator/);
+  });
   it("needsOperator: shows 'Requires operator review', no failure, no execute/resend button", () => {
     renderDetail(seed("pay_operator00001"));
     expect(screen.getByTestId("unresolved-operator")).toHaveTextContent("Requires operator review");
@@ -29,6 +34,8 @@ describe("PaymentDetail", () => {
     renderDetail({ ...seed("pay_operator00001"), status: "failed", failure: { code: "BROADCAST_REJECTED", retriable: false, definitive: true } });
     expect(screen.getByTestId("unresolved-operator")).toBeInTheDocument();
     expect(screen.queryByTestId("failure-definitive")).toBeNull();
+    expect(within(screen.getByTestId("send-record")).getByText("Requires operator review", { exact: true })).toBeInTheDocument();
+    expect(within(screen.getByTestId("send-record")).queryByText("Failed")).toBeNull();
   });
 
   it("reconciling payment is labelled as unresolved and offers no resend", () => {

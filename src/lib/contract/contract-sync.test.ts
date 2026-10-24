@@ -1,5 +1,5 @@
 /**
- * Guards against contract drift: walks every schema in contract/openapi.v1.1.yaml and
+ * Guards against contract drift: walks every schema in contracts/openapi.yaml and
  * checks the matching Zod schema has the same property names, the same required set,
  * the same enum values and the same nullability. Any change to the YAML fails here
  * until schemas.ts is updated (and the change is agreed with the backend first).
@@ -11,7 +11,7 @@ import { parse } from "yaml";
 import type { z } from "zod";
 import { contractSchemas } from "./schemas";
 
-const YAML_PATH = path.resolve(__dirname, "../../../contract/openapi.v1.1.yaml");
+const YAML_PATH = path.resolve(__dirname, "../../../contracts/openapi.yaml");
 const raw = readFileSync(YAML_PATH, "utf8");
 const doc = parse(raw) as { info: { version: string }; components: { schemas: Record<string, OA> } };
 

@@ -60,7 +60,7 @@ export function AgentSummary({ withControls = false }: { withControls?: boolean 
           </span>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          {u.approvedCount} paid · {u.pendingCount} pending · {u.rejectedCount} blocked · policy v{a.policy.version}. Numbers come from the backend; the browser never sums them.
+          {u.approvedCount} approved · {u.pendingCount} pending · {u.rejectedCount} blocked · policy v{a.policy.version}. Numbers come from the backend; the browser never sums them.
         </p>
       </div>
       {withControls && (

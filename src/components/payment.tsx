@@ -192,7 +192,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
           <Card title="Send record" className="!bg-zinc-950/40" testId="send-record">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-zinc-500">Status</dt>
-              <dd>{STATUS_COPY[p.status].label}</dd>
+              <dd>{paymentBadge(p).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
               <dd className="font-mono">{p.confirmations ?? 0}</dd>
               <dt className="text-zinc-500">Pool</dt>
@@ -213,8 +213,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
                 <>
                   <dt className="text-zinc-500">Wallet op</dt>
                   <dd data-testid="wallet-op">
-                    {WALLET_OP_COPY[op.state]} · attempt {op.attempt}
-                    {op.needsOperator && <Badge tone="review" className="ml-2">needsOperator</Badge>}
+                    {op.needsOperator ? "Requires operator review" : WALLET_OP_COPY[op.state]} · attempt {op.attempt}
                   </dd>
                   {op.lastReconciledAt && (
                     <>

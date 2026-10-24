@@ -2,7 +2,7 @@
 
 Policy-guarded shielded Zcash payments for AI agents. The backend enforces the owner's spend rules; the merchant verifies receipt with its own viewing key. No customer key is ever shared.
 
-This is the web app. It is built against `contract/openapi.v1.1.yaml` (frozen) and runs fully on a strict mock of that contract until the backend is live.
+This is the web app. `contracts/openapi.yaml` on main is the source of truth; contract-sync tests read that file directly. `contract/openapi.v1.1.yaml` is the original reviewed snapshot (currently byte-identical). The default is an explicitly simulated backend, not real payments. Live mode consumes Temi's backend; the frontend never executes wallet logic or computes confirmation status.
 
 ## Run
 
@@ -29,3 +29,11 @@ Testnet only. Demo sessions are role isolation (customer / merchant), not authen
 - `src/app/` Overview (blocked-agent opener), Agent policy, Payments (timeline), Merchant (verification), Privacy lens
 - `docs/contract-changes.md` contract notes flagged for review, not implemented
 - `docs/screenshots/` desktop + mobile captures
+
+# Integration and review
+
+Temi owns backend policy enforcement, wallet execution, invoice APIs, and merchant verification. No backend code or wallet scripts are executed by the frontend checks. Start the backend separately, then build the frontend with `NEXT_PUBLIC_API_MODE=live` and `VEILPAY_BACKEND_URL` set in the process environment. The backend URL must be an origin, without a trailing slash; the browser calls same-origin `/api/*`.
+
+The first release remains testnet only. Merchant payment discovery is not in the current contract: live users must provide a payment ID to verify. Mock-only shortcuts are never used by the live client. QR requests use only the backend-provided address and decimal ZEC amount; sharing one is not evidence of payment. Unknown or mock data sources carry a demo warning.
+
+This PR requires joint review before merge. Real wallet execution, production deployment, and end-to-end backend integration remain separate verification steps.

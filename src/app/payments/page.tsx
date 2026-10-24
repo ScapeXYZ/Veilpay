@@ -26,19 +26,18 @@ function Payments() {
   const f = FILTERS.find((x) => x.id === filter)!;
   const shown = items.filter(f.match);
   const selId = selected ?? shown[0]?.id ?? null;
-  const { data: detail } = usePayment(selId);
+  const { data: detail, isLoading: detailLoading, error: detailError } = usePayment(selId);
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
       <Card className="!p-3">
-        <div className="mb-2 flex flex-wrap gap-1" role="tablist">
+        <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="Filter payments">
           {FILTERS.map((x) => {
             const n = items.filter(x.match).length;
             return (
               <button
                 key={x.id}
-                role="tab"
-                aria-selected={filter === x.id}
+                aria-pressed={filter === x.id}
                 data-testid={`filter-${x.id}`}
                 onClick={() => {
                   setFilter(x.id);
@@ -67,7 +66,7 @@ function Payments() {
           </div>
         )}
       </Card>
-      <Card>{detail ? <PaymentDetail p={detail} /> : <p className="text-sm text-zinc-500">Select a payment.</p>}</Card>
+      <Card>{detailError ? <ErrorBox>{errorText(detailError)}</ErrorBox> : detailLoading ? <Skeleton className="h-64" /> : detail ? <PaymentDetail p={detail} /> : <p className="text-sm text-zinc-500">Select a payment.</p>}</Card>
     </div>
   );
 }
