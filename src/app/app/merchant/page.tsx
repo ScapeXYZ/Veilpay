@@ -159,11 +159,11 @@ export default function MerchantPage() {
     <>
       <PageHeader
         title="Merchant portal"
-        subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer hands over nothing, and the chain shows nothing."
+        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares nothing, and the public network shows nothing."
       />
       <RequireContext ctx="merchant">
-        <Notice tone="neutral" title="What this proves, exactly">
-          Receipt state for one invoice: amount and confirmations at a fresh address. In the demo the operator holds the merchant&apos;s incoming viewing key (custodial). An acknowledgment is the merchant service&apos;s signed statement, not chain proof.
+        <Notice tone="neutral" title="What a receipt check tells you">
+          Whether this invoice received the right amount and how many network confirmations it has. In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
         </Notice>
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Lookup />

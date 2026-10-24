@@ -12,8 +12,9 @@ import { errorText, useAgent, useHealth, usePayments, useSession } from "@/lib/a
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
 import { pctZat } from "@/lib/zat";
+import { Term } from "@/components/term";
 
-function Metric({ label, children, hint, testId, icon }: { label: string; children: ReactNode; hint?: ReactNode; testId?: string; icon?: ReactNode }) {
+function Metric({ label, children, hint, testId, icon }: { label: ReactNode; children: ReactNode; hint?: ReactNode; testId?: string; icon?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5 rounded-2xl border border-zinc-800 bg-zinc-900 p-4" data-testid={testId}>
       <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">{icon}{label}</div>
@@ -27,11 +28,11 @@ function PrimaryAction() {
   const m = useNetworkMode();
   const cls = "inline-flex items-center gap-2 rounded-lg bg-accent-400 px-3.5 py-2 text-sm font-semibold text-zinc-950 hover:bg-accent-300";
   if (m.kind === "mock")
-    return <Link href="/demo" className={cls} data-testid="primary-action"><PlayCircle size={15} aria-hidden /> Run guided demo</Link>;
+    return <Link href="/demo" className={cls} data-testid="primary-action"><PlayCircle size={15} aria-hidden /> Watch the 2-minute demo</Link>;
   if (m.kind === "mainnet_readonly")
     return <Link href="/app/activity" className={cls} data-testid="primary-action"><Eye size={15} aria-hidden /> View observations</Link>;
   if (!m.canWrite) return null;
-  return <Link href="/app/payments/new" className={cls} data-testid="primary-action"><ReceiptText size={15} aria-hidden /> Review an invoice</Link>;
+  return <Link href="/app/payments/new" className={cls} data-testid="primary-action"><ReceiptText size={15} aria-hidden /> New payment request</Link>;
 }
 
 function ModeCard() {
@@ -48,13 +49,13 @@ function ModeCard() {
       </div>
       {h && (
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-zinc-800 pt-3 text-xs sm:grid-cols-4" data-testid="freshness">
-          <div><dt className="text-zinc-500">Wallet-reported height</dt><dd className="font-mono text-zinc-200">{h.chainHeight != null ? h.chainHeight.toLocaleString("en-US") : "Unavailable"}</dd></div>
-          <div><dt className="text-zinc-500">Independent chain tip</dt><dd className="text-zinc-200">{h.chainWatcher.supported === false ? "Not available" : h.chainWatcher.lastBlockAt ? `block seen ${fmtTime(h.chainWatcher.lastBlockAt)}` : "Unavailable"}</dd></div>
-          <div><dt className="text-zinc-500">Reconciler</dt><dd className="text-zinc-200">{h.reconciler.lastRunAt ? fmtTime(h.reconciler.lastRunAt) : "Not run yet"}</dd></div>
-          <div><dt className="text-zinc-500">Confirmations required</dt><dd className="font-mono text-zinc-200">{h.confirmationsRequired}</dd></div>
+          <div><dt className="text-zinc-500">Latest block (wallet)</dt><dd className="font-mono text-zinc-200">{h.chainHeight != null ? h.chainHeight.toLocaleString("en-US") : "Unavailable"}</dd></div>
+          <div><dt className="text-zinc-500">Independent block check</dt><dd className="text-zinc-200">{h.chainWatcher.supported === false ? "Not available" : h.chainWatcher.lastBlockAt ? `last block ${fmtTime(h.chainWatcher.lastBlockAt)}` : "Unavailable"}</dd></div>
+          <div><dt className="text-zinc-500"><Term k="safetyCheck">Last safety check</Term></dt><dd className="text-zinc-200">{h.reconciler.lastRunAt ? fmtTime(h.reconciler.lastRunAt) : "Not run yet"}</dd></div>
+          <div><dt className="text-zinc-500"><Term k="confirmations">Confirmations needed</Term></dt><dd className="font-mono text-zinc-200">{h.confirmationsRequired}</dd></div>
         </dl>
       )}
-      <p className="mt-3 text-[11px] text-zinc-500">Heights are what the wallet reports. A single height is not shown as &ldquo;fully synced&rdquo;.</p>
+      <p className="mt-3 text-[11px] text-zinc-500">Block numbers are what the wallet reports. One number alone does not mean the wallet is fully up to date.</p>
     </Card>
   );
 }
@@ -62,8 +63,8 @@ function ModeCard() {
 function attentionOf(p: Payment): { icon: ReactNode; text: string } | null {
   const u = unresolvedOf(p);
   if (u) return { icon: <Wrench size={14} className="text-orange-300" aria-hidden />, text: u.title };
-  if (p.timeline.some((e) => e.kind === "reorg") && p.status !== "confirmed") return { icon: <RotateCcw size={14} className="text-amber-300" aria-hidden />, text: "Moved back by a reorg" };
-  if (p.status === "rejected") return { icon: <Ban size={14} className="text-rose-400" aria-hidden />, text: "Blocked by policy · no transfer" };
+  if (p.timeline.some((e) => e.kind === "reorg") && p.status !== "confirmed") return { icon: <RotateCcw size={14} className="text-amber-300" aria-hidden />, text: "Moved back by the network" };
+  if (p.status === "rejected") return { icon: <Ban size={14} className="text-rose-400" aria-hidden />, text: "Blocked by a spending rule · no money moved" };
   return null;
 }
 
@@ -85,17 +86,17 @@ function Dashboard() {
       <ModeCard />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Observed wallet balance" icon={<Wallet size={12} aria-hidden />} testId="metric-wallet"
-          hint="Not provided by the current API. The wallet is unallocated/shared, so its balance is never shown as this agent's funds.">
+        <Metric label="Wallet balance" icon={<Wallet size={12} aria-hidden />} testId="metric-wallet"
+          hint="Not shown. The wallet is shared, so its balance is not this agent's money.">
           <span className="text-zinc-400" data-testid="wallet-unavailable">Unavailable</span>
         </Metric>
-        <Metric label="Available policy budget" testId="metric-remaining" hint={<>of <Zec zat={total} /> total budget</>}>
+        <Metric label="Left to spend" testId="metric-remaining" hint={<>of a <Zec zat={total} /> total budget</>}>
           <Zec zat={u.remainingZat} testId="remaining" />
         </Metric>
-        <Metric label="Reserved" testId="metric-reserved" hint={`${u.pendingCount} pending request${u.pendingCount === 1 ? "" : "s"}`}>
+        <Metric label={<Term k="reserved">Set aside</Term>} testId="metric-reserved" hint={`${u.pendingCount} approved, not sent yet`}>
           <Zec zat={u.reservedZat} />
         </Metric>
-        <Metric label="Spent" testId="metric-spent" hint={`${u.approvedCount} approved · ${u.rejectedCount} blocked`}>
+        <Metric label="Spent" testId="metric-spent" hint={`${u.approvedCount} approved · ${u.rejectedCount} blocked by rules`}>
           <Zec zat={u.spentZat} />
         </Metric>
       </div>
@@ -104,10 +105,10 @@ function Dashboard() {
         <div className="flex flex-col gap-5">
           <Card title="Needs attention" testId="needs-attention" action={<SourceTag />}>
             {h?.chainWatcher.deepReorgAlert && (
-              <p className="mb-3 flex items-center gap-2 text-sm text-rose-200"><AlertTriangle size={14} aria-hidden /> Deep reorg alert raised. An operator is reviewing.</p>
+              <p className="mb-3 flex items-center gap-2 text-sm text-rose-200"><AlertTriangle size={14} aria-hidden /> The network replaced many recent blocks. An operator is reviewing.</p>
             )}
             {attention.length === 0 && !h?.chainWatcher.deepReorgAlert ? (
-              <p className="text-sm text-zinc-500">Nothing needs attention in the loaded payments.</p>
+              <p className="text-sm text-zinc-500">All clear. Nothing needs your attention.</p>
             ) : (
               <ul className="divide-y divide-zinc-800">
                 {attention.map(({ p, a: at }) => (
@@ -141,15 +142,15 @@ function Dashboard() {
         </div>
         <Card testId="agent-summary" title={<span className="flex items-center gap-2">{a.name}<Badge tone={a.status === "active" ? "success" : "warning"} testId="agent-status">{a.status}</Badge></span>}>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <div><dt className="text-xs text-zinc-500">Per-payment cap</dt><dd><Zec zat={a.policy.perTxLimitZat} testId="cap" /></dd></div>
+            <div><dt className="text-xs text-zinc-500">Max per payment</dt><dd><Zec zat={a.policy.perTxLimitZat} testId="cap" /></dd></div>
             <div><dt className="text-xs text-zinc-500">Total budget</dt><dd><Zec zat={total} /></dd></div>
-            <div className="col-span-2"><dt className="flex items-center gap-1 text-xs text-zinc-500"><CalendarClock size={12} aria-hidden /> Daily allowance</dt><dd className="text-zinc-400" data-testid="daily-not-configured">Not configured · API pending</dd></div>
+            <div className="col-span-2"><dt className="flex items-center gap-1 text-xs text-zinc-500"><CalendarClock size={12} aria-hidden /> Daily limit</dt><dd className="text-zinc-400" data-testid="daily-not-configured">Not available yet</dd></div>
           </dl>
           <div className="mt-4">
             <Meter total={total} parts={[{ pct: spentPct, cls: "bg-emerald-500", label: "spent" }, { pct: resPct, cls: "bg-sky-500", label: "reserved" }]} />
-            <p className="mt-2 text-xs text-zinc-500">Policy v{a.policy.version}. Spent, reserved and remaining come from the backend; the browser never sums them.</p>
+            <p className="mt-2 text-xs text-zinc-500">Rules version {a.policy.version}. These totals come from the VeilPay server, not from this page.</p>
           </div>
-          <Link href="/app/policy" className="mt-4 inline-flex items-center gap-1 text-sm text-accent-300 hover:text-accent-200">Policy controls <ArrowRight size={13} aria-hidden /></Link>
+          <Link href="/app/spending-rules" className="mt-4 inline-flex items-center gap-1 text-sm text-accent-300 hover:text-accent-200">Spending rules <ArrowRight size={13} aria-hidden /></Link>
         </Card>
       </div>
     </>
@@ -159,7 +160,7 @@ function Dashboard() {
 export default function DashboardPage() {
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="What the agent may do, what it actually did, and which evidence backs it." />
+      <PageHeader title="Overview" subtitle="How much your AI agent may spend, what it has paid, and anything that needs you." />
       <RequireContext ctx="customer">
         <Dashboard />
       </RequireContext>

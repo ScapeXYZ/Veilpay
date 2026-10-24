@@ -18,7 +18,7 @@ export function MockBanner() {
         <FlaskConical size={14} aria-hidden />
         <span>
           <span className="uppercase">Simulation · Mock backend · No funds move.</span>{" "}
-          <span className="hidden font-normal sm:inline">Every txid, confirmation and receipt here is fake.</span>
+          <span className="hidden font-normal sm:inline">Every payment, confirmation and receipt here is pretend.</span>
         </span>
       </div>
     );
@@ -28,14 +28,14 @@ export function MockBanner() {
         <Lock size={14} aria-hidden />
         <span>
           <span className="uppercase">Mainnet · Read-only · Execution disabled.</span>{" "}
-          <span className="hidden font-normal sm:inline">Observations only; VeilPay does not send on mainnet.</span>
+          <span className="hidden font-normal sm:inline">VeilPay only watches the real network; it never sends there.</span>
         </span>
       </div>
     );
   if (m.kind === "disabled")
     return (
       <div data-testid="disabled-banner" role="note" className={`${base} bg-amber-900 text-white`}>
-        Broadcasting disabled. This backend cannot send funds or independently verify merchant receipts.
+        Sending is turned off. This server cannot send payments or check merchant receipts on its own.
       </div>
     );
   if (m.kind === "unknown")
@@ -68,22 +68,22 @@ export function SourceTag({ source: forced, className }: { source?: DataSource; 
         <FlaskConical size={11} aria-hidden /> MOCK
       </Badge>
     );
-  if (source === "disabled") return <Badge tone="warning" className={className} testId="source-disabled">BROADCAST DISABLED</Badge>;
+  if (source === "disabled") return <Badge tone="warning" className={className} testId="source-disabled">SENDING OFF</Badge>;
   if (source === "real")
     return (
       <Badge tone="success" className={className} testId="source-real">
-        <Radio size={11} aria-hidden /> REAL TESTNET
+        <Radio size={11} aria-hidden /> TEST NETWORK
       </Badge>
     );
   if (!forced && mode.kind === "mainnet_readonly")
     return (
       <Badge tone="info" className={className} testId="source-mainnet">
-        <Eye size={11} aria-hidden /> MAINNET OBSERVATION
+        <Eye size={11} aria-hidden /> MAINNET · WATCH ONLY
       </Badge>
     );
   return (
     <Badge tone="neutral" className={className} testId="source-unknown">
-      <ShieldQuestion size={11} aria-hidden /> UNKNOWN SOURCE
+      <ShieldQuestion size={11} aria-hidden /> SOURCE UNKNOWN
     </Badge>
   );
 }

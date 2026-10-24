@@ -41,10 +41,10 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           {blocked ? <Ban size={16} className="text-rose-400" aria-hidden /> : <CheckCircle2 size={16} className="text-emerald-400" aria-hidden />}
-          {blocked ? "Backend policy blocked this payment" : "Backend policy approved this payment"}
+          {blocked ? "Blocked: this breaks a spending rule" : "Approved: within your spending rules"}
         </div>
         <span className="text-xs text-zinc-500">
-          policy v{d.policyVersion} · {fmtTime(d.evaluatedAt)}
+          rules v{d.policyVersion} · {fmtTime(d.evaluatedAt)}
         </span>
       </div>
       {d.violations.length > 0 && (
@@ -52,20 +52,20 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           {d.violations.map((v, i) => (
             <li key={i} className="rounded-lg bg-zinc-950/60 px-3 py-2 text-sm" data-testid={`violation-${v.code}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <code className="rounded bg-rose-950 px-1.5 py-0.5 text-xs text-rose-300">{v.code}</code>
-                <span className="text-zinc-200">{VIOLATION_COPY[v.code]}</span>
+                <span className="font-medium text-zinc-100">{VIOLATION_COPY[v.code]}</span>
+                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80" title="Error code">{v.code}</code>
               </div>
               {!compact && <p className="mt-1 text-xs text-zinc-400">{v.message}</p>}
               {(v.limitZat || v.requestedZat) && (
                 <div className="mt-1.5 flex flex-wrap gap-4 text-xs text-zinc-400">
                   {v.requestedZat && (
                     <span>
-                      requested <Zec zat={v.requestedZat} className="text-zinc-100" />
+                      asked for <Zec zat={v.requestedZat} className="text-zinc-100" />
                     </span>
                   )}
                   {v.limitZat && (
                     <span>
-                      limit <Zec zat={v.limitZat} className="text-zinc-100" />
+                      your limit <Zec zat={v.limitZat} className="text-zinc-100" />
                     </span>
                   )}
                 </div>
@@ -147,14 +147,14 @@ function ExecuteBlock({ p }: { p: Payment }) {
   const manual = mode.kind === "testnet_manual";
   return (
     <div className="rounded-xl border border-sky-900 bg-sky-950/20 p-4" data-testid="execute-block">
-      <p className="text-sm text-zinc-200">Policy approved and reserved. Not paid until the shielded send is observed with confirmations.</p>
+      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the network confirms it.</p>
       <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
-        <Lock size={12} aria-hidden /> A shielded send cannot be reversed once broadcast. The backend sends at most once{manual ? "; an operator signs and broadcasts outside this app" : ""}.
+        <Lock size={12} aria-hidden /> A sent payment cannot be pulled back. VeilPay sends it at most once{manual ? "; an operator sends it from outside this app" : ""}.
       </p>
       {mode.canExecute ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
-            {retryable ? "Retry (same request, no second send)" : manual ? "Stage for operator" : "Execute shielded payment"}
+            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : "Send privately"}
           </Button>
         </div>
       ) : (

@@ -12,6 +12,7 @@ import type { Agent, PolicyUpdate } from "@/lib/contract/schemas";
 import { inputCls } from "@/lib/styles";
 import { fmtTime } from "@/lib/present";
 import { formatZec, parseZecInput, pctZat } from "@/lib/zat";
+import { Term } from "@/components/term";
 
 function Section({ icon, title, help, children }: { icon: ReactNode; title: string; help: ReactNode; children: ReactNode }) {
   return (
@@ -29,13 +30,13 @@ type Draft = { perTxLimitZat: string; totalBudgetZat: string; allowedMerchantIds
 
 function diffRows(a: Agent, d: Draft) {
   const rows: { label: string; from: ReactNode; to: ReactNode }[] = [];
-  if (d.perTxLimitZat !== a.policy.perTxLimitZat) rows.push({ label: "Per-payment cap", from: <Zec zat={a.policy.perTxLimitZat} />, to: <Zec zat={d.perTxLimitZat} /> });
+  if (d.perTxLimitZat !== a.policy.perTxLimitZat) rows.push({ label: "Max per payment", from: <Zec zat={a.policy.perTxLimitZat} />, to: <Zec zat={d.perTxLimitZat} /> });
   if (d.totalBudgetZat !== a.policy.totalBudgetZat) rows.push({ label: "Total budget", from: <Zec zat={a.policy.totalBudgetZat} />, to: <Zec zat={d.totalBudgetZat} /> });
   const am = a.policy.allowedMerchantIds.join(", ");
   const dm = d.allowedMerchantIds.join(", ");
-  if (am !== dm) rows.push({ label: "Allowed merchants", from: am || "none", to: dm || "none" });
+  if (am !== dm) rows.push({ label: "Approved merchants", from: am || "none", to: dm || "none" });
   const at = a.policy.requestTtlSeconds;
-  if (d.requestTtlSeconds !== undefined && d.requestTtlSeconds !== at) rows.push({ label: "Request TTL", from: at ? `${at}s` : "default", to: `${d.requestTtlSeconds}s` });
+  if (d.requestTtlSeconds !== undefined && d.requestTtlSeconds !== at) rows.push({ label: "Approval time limit", from: at ? `${at}s` : "default", to: `${d.requestTtlSeconds}s` });
   return rows;
 }
 
@@ -59,7 +60,7 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
     const totalBudgetZat = parseZecInput(budget.replace(/,/g, ""));
     const ttlN = ttl.trim() === "" ? undefined : Number(ttl);
     if (!perTxLimitZat || !totalBudgetZat) return setInputErr("Amounts must be ZEC with at most 8 decimals.");
-    if (ttlN !== undefined && (!Number.isInteger(ttlN) || ttlN < 30 || ttlN > 86400)) return setInputErr("Request TTL must be 30 to 86400 seconds.");
+    if (ttlN !== undefined && (!Number.isInteger(ttlN) || ttlN < 30 || ttlN > 86400)) return setInputErr("The time limit must be 30 to 86400 seconds.");
     const d: Draft = { perTxLimitZat, totalBudgetZat, allowedMerchantIds: merchants.split(",").map((m) => m.trim()).filter(Boolean), ...(ttlN !== undefined ? { requestTtlSeconds: ttlN } : {}) };
     if (diffRows(a, d).length === 0) return setInputErr("Nothing changed.");
     setReview(d);
@@ -76,13 +77,13 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card testId="policy-form" title={<span className="flex items-center gap-2">Policy v{a.policy.version}{ro && <Badge tone="info">read-only snapshot</Badge>}</span>} action={<span className="text-xs text-zinc-500">updated {fmtTime(a.policy.updatedAt)}</span>}>
-        <Section icon={<Gauge size={15} aria-hidden />} title="Per-payment cap" help="The most one request may ask for. Anything above is blocked with the exact limit.">
-          <Field label="Cap (ZEC)">
+      <Card testId="policy-form" title={<span className="flex items-center gap-2">Spending rules · version {a.policy.version}{ro && <Badge tone="info">view only</Badge>}</span>} action={<span className="text-xs text-zinc-500">updated {fmtTime(a.policy.updatedAt)}</span>}>
+        <Section icon={<Gauge size={15} aria-hidden />} title="Max per payment" help="The most the agent can pay in one go. Anything above is blocked, and you see exactly why.">
+          <Field label="Max per payment (ZEC)">
             <input className={`${inputCls} font-mono`} value={cap} onChange={(e) => setCap(e.target.value)} data-testid="cap-input" readOnly={ro} inputMode="decimal" />
           </Field>
         </Section>
-        <Section icon={<ShieldCheck size={15} aria-hidden />} title="Total budget" help="Lowering it below spent + reserved is accepted but blocks new approvals until usage fits.">
+        <Section icon={<ShieldCheck size={15} aria-hidden />} title="Total budget" help="Everything the agent may spend overall. If you lower it below what is already spent or set aside, new payments wait until it fits.">
           <Field label="Budget (ZEC)">
             <input className={`${inputCls} font-mono`} value={budget} onChange={(e) => setBudget(e.target.value)} readOnly={ro} inputMode="decimal" />
           </Field>
@@ -90,52 +91,52 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
             <Meter total={a.policy.totalBudgetZat} parts={[{ pct: spentPct, cls: "bg-emerald-500", label: "spent" }, { pct: resPct, cls: "bg-sky-500", label: "reserved" }]} />
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
               <span>spent <Zec zat={u.spentZat} className="text-zinc-200" /></span>
-              <span>reserved <Zec zat={u.reservedZat} className="text-zinc-200" /></span>
-              <span>remaining <Zec zat={u.remainingZat} className="text-zinc-200" /></span>
+              <span><Term k="reserved">set aside</Term> <Zec zat={u.reservedZat} className="text-zinc-200" /></span>
+              <span>left <Zec zat={u.remainingZat} className="text-zinc-200" /></span>
             </div>
           </div>
         </Section>
-        <Section icon={<CalendarClock size={15} aria-hidden />} title="Daily budget" help="UTC window. Deferred until fee accounting and reservations are agreed.">
-          <p className="text-sm text-zinc-400" data-testid="daily-pending">Not in the current API. No daily ceiling is implied from the total budget.</p>
+        <Section icon={<CalendarClock size={15} aria-hidden />} title="Daily limit" help="A cap per day (UTC). Coming later.">
+          <p className="text-sm text-zinc-400" data-testid="daily-pending">Not available yet. Only the total budget applies today.</p>
         </Section>
-        <Section icon={<ListChecks size={15} aria-hidden />} title="Merchant allowlist" help="Comma-separated merchant ids. Requests to anyone else are blocked.">
-          <Field label="Allowed merchant ids">
+        <Section icon={<ListChecks size={15} aria-hidden />} title="Approved merchants" help="Shops the agent is allowed to pay, separated by commas. Payments to anyone else are blocked.">
+          <Field label="Merchant IDs">
             <input className={`${inputCls} font-mono`} value={merchants} onChange={(e) => setMerchants(e.target.value)} readOnly={ro} />
           </Field>
         </Section>
-        <Section icon={<Clock size={15} aria-hidden />} title="Request expiry" help="How long an approved request holds its reservation.">
-          <Field label="Request TTL (seconds)">
+        <Section icon={<Clock size={15} aria-hidden />} title="Approval time limit" help="How long an approved payment keeps its money set aside before it lapses.">
+          <Field label="Time limit (seconds)">
             <input className={`${inputCls} font-mono`} value={ttl} onChange={(e) => setTtl(e.target.value)} readOnly={ro} inputMode="numeric" />
           </Field>
         </Section>
-        <Section icon={<UserCheck size={15} aria-hidden />} title="Approval mode" help="Automatic skips an owner approval, not policy, wallet or signing checks.">
-          <p className="text-sm text-zinc-400" data-testid="approval-pending">Owner approval is deferred until its auth and state machine are agreed. Operator review is a separate step and is not owner approval.</p>
+        <Section icon={<UserCheck size={15} aria-hidden />} title="Your approval" help="Asking you before each payment.">
+          <p className="text-sm text-zinc-400" data-testid="approval-pending">Coming later. Today every payment inside the rules is approved automatically; the operator&apos;s send step is separate and is not your approval.</p>
         </Section>
 
         {ro ? (
           <WriteBlocked reason={mode.writeBlockedReason} testId="policy-readonly" />
         ) : review ? (
           <div className="mt-2 rounded-xl border border-accent-900 bg-accent-950/60 p-4" data-testid="policy-review">
-            <div className="text-sm font-semibold text-zinc-50">Review change: v{a.policy.version} → v{a.policy.version + 1}</div>
+            <div className="text-sm font-semibold text-zinc-50">Check your changes before saving</div>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               {diffRows(a, review).map((r) => (
                 <div key={r.label} className="contents"><dt className="text-zinc-400">{r.label}</dt><dd className="text-zinc-200">{r.from} <span className="text-zinc-500">→</span> <b className="font-medium text-zinc-50">{r.to}</b></dd></div>
               ))}
             </dl>
-            <p className="mt-3 text-xs text-zinc-400">{u.pendingCount} pending request{u.pendingCount === 1 ? "" : "s"} will be re-checked against the new version at execute. Broadcast payments are not affected.</p>
+            <p className="mt-3 text-xs text-zinc-400">{u.pendingCount} approved payment{u.pendingCount === 1 ? "" : "s"} not yet sent will be checked against the new rules before sending. Payments already sent are not affected.</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={confirm} busy={put.isPending} data-testid="save-policy">Save as v{a.policy.version + 1}</Button>
+              <Button onClick={confirm} busy={put.isPending} data-testid="save-policy">Save new rules</Button>
               <Button variant="ghost" onClick={() => setReview(null)}>Back to editing</Button>
             </div>
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Button onClick={prepare} data-testid="review-policy">Review changes</Button>
-            {saved && <span className="text-sm text-emerald-300" data-testid="policy-saved">Saved, now v{saved}.</span>}
+            {saved && <span className="text-sm text-emerald-300" data-testid="policy-saved">Saved. Rules are now version {saved}.</span>}
           </div>
         )}
         {inputErr && <div className="mt-3"><ErrorBox>{inputErr}</ErrorBox></div>}
-        {put.error && <div className="mt-3"><ErrorBox>{conflict ? "Someone else changed the policy. The latest version is loaded; review and save again." : errorText(put.error)}</ErrorBox></div>}
+        {put.error && <div className="mt-3"><ErrorBox>{conflict ? "Someone else changed the rules meanwhile. The latest rules are loaded; check and save again." : errorText(put.error)}</ErrorBox></div>}
       </Card>
 
       <div className="flex flex-col gap-5">
@@ -146,14 +147,14 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
               {a.status === "active" ? "Pause agent" : "Resume agent"}
             </Button>
           )}
-          <p className="mt-3 text-xs text-zinc-500">Pausing blocks new requests and rejects approved-but-unsent payments at execute. Payments already broadcast are not cancelled: a shielded send cannot be recalled.</p>
+          <p className="mt-3 text-xs text-zinc-500">Pausing stops new payments and cancels approved ones that have not been sent. Payments already sent cannot be pulled back.</p>
           {st.error && <div className="mt-2"><ErrorBox>{errorText(st.error)}</ErrorBox></div>}
         </Card>
-        <Notice tone="neutral" title="What a policy change touches">
+        <Notice tone="neutral" title="What changing the rules affects">
           <ul className="list-disc space-y-1 pl-4">
-            <li>Approved but unsent payments are re-checked at execute against the current version.</li>
-            <li>Submitted, confirming or unresolved payments are never cancelled.</li>
-            <li>History is never rewritten: each decision keeps its policy version.</li>
+            <li>Approved payments not yet sent are checked against the new rules first.</li>
+            <li>Payments already on their way are never cancelled.</li>
+            <li>History stays as it was: each decision shows the rules version it used.</li>
           </ul>
         </Notice>
       </div>
@@ -172,7 +173,7 @@ function PolicyForm() {
 export default function PolicyPage() {
   return (
     <>
-      <PageHeader title="Policy controls" subtitle="The owner's rules, enforced by the backend on every request and again at execute." />
+      <PageHeader title="Spending rules" subtitle="The limits your agent must stay within. VeilPay checks every payment against them, and again right before sending." />
       <RequireContext ctx="customer">
         <PolicyForm />
       </RequireContext>

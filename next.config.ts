@@ -22,7 +22,13 @@ const nextConfig: NextConfig = {
   },
   /** Pre-Phase-1 deep links keep working (reviewed aliases, not permanent). */
   async redirects() {
-    return ["policy", "payments", "merchant", "privacy"].map((r) => ({ source: `/${r}`, destination: `/app/${r}`, permanent: false }));
+    const to = (source: string, destination: string) => ({ source, destination, permanent: false });
+    return [
+      to("/policy", "/app/spending-rules"),
+      to("/app/policy", "/app/spending-rules"),
+      to("/help", "/app/help"),
+      ...["payments", "merchant", "privacy", "activity"].map((r) => to(`/${r}`, `/app/${r}`)),
+    ];
   },
   async rewrites() {
     return backend ? [{ source: "/api/:path*", destination: `${backend}/:path*` }] : [];

@@ -9,11 +9,12 @@ import { Card, Notice, Zec } from "@/components/ui";
 import { usePayments, useSession } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { paymentBadge } from "@/lib/present";
+import { Term } from "@/components/term";
 
 const LENSES = [
-  { id: "public", label: "Public chain", icon: Globe },
+  { id: "public", label: "Anyone online", icon: Globe },
   { id: "merchant", label: "Merchant", icon: Store },
-  { id: "owner", label: "Owner", icon: User },
+  { id: "owner", label: "You (owner)", icon: User },
   { id: "operator", label: "Operator", icon: Server },
 ] as const;
 type LensId = (typeof LENSES)[number]["id"];
@@ -40,9 +41,9 @@ function OperatorLens() {
     <div className="rounded-xl border border-orange-900/70 bg-orange-950/10 p-4" data-testid="lens-operator">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100"><Server size={16} className="text-orange-300" aria-hidden />What the operator holds</div>
       <ul className="space-y-2 text-sm text-zinc-300">
-        <li className="flex gap-2"><Eye size={15} className="mt-0.5 shrink-0 text-orange-300" aria-hidden />The merchant&apos;s incoming viewing key, to scan receipts server-side. Account-wide and custodial: not a per-payment disclosure proof.</li>
-        <li className="flex gap-2"><Eye size={15} className="mt-0.5 shrink-0 text-orange-300" aria-hidden />The custodial test wallet used for testnet sends. A custodial test wallet is not self-custody.</li>
-        <li className="flex gap-2"><EyeOff size={15} className="mt-0.5 shrink-0 text-emerald-400" aria-hidden />Never in the browser: seeds, spending keys, viewing keys, raw wallet output, or txids in any URL.</li>
+        <li className="flex gap-2"><Eye size={15} className="mt-0.5 shrink-0 text-orange-300" aria-hidden />The merchant&apos;s <Term k="viewingKey">viewing key</Term>, to check its receipts on the server. It covers the whole merchant account and is held for them, so it is not proof about one single payment.</li>
+        <li className="flex gap-2"><Eye size={15} className="mt-0.5 shrink-0 text-orange-300" aria-hidden />The test wallet that sends payments. You do not hold its keys yourself.</li>
+        <li className="flex gap-2"><EyeOff size={15} className="mt-0.5 shrink-0 text-emerald-400" aria-hidden />Never in this browser: wallet recovery phrases, spending keys, viewing keys, or transaction IDs in a link.</li>
       </ul>
     </div>
   );
@@ -54,12 +55,12 @@ function Lens({ p, lens }: { p: Payment; lens: LensId }) {
   if (lens === "public")
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <List testId="lens-public" title="Anyone watching the chain sees" items={l?.publicChainSees} icon={<Globe size={16} className="text-zinc-400" aria-hidden />} tone="border-zinc-800 bg-zinc-950/40" />
-        <List testId="lens-hidden" title="Hidden on chain" items={l?.hiddenOnChain} icon={<EyeOff size={16} className="text-emerald-400" aria-hidden />} tone="border-emerald-900/70 bg-emerald-950/15" />
+        <List testId="lens-public" title="Anyone looking at the network sees" items={l?.publicChainSees} icon={<Globe size={16} className="text-zinc-400" aria-hidden />} tone="border-zinc-800 bg-zinc-950/40" />
+        <List testId="lens-hidden" title="Kept private" items={l?.hiddenOnChain} icon={<EyeOff size={16} className="text-emerald-400" aria-hidden />} tone="border-emerald-900/70 bg-emerald-950/15" />
       </div>
     );
   if (lens === "merchant") return <List testId="lens-merchant" title="The merchant sees" items={l?.merchantSees} icon={<Store size={16} className="text-accent-300" aria-hidden />} tone="border-accent-900 bg-accent-950/30" />;
-  return <List testId="lens-customer" title="The agent's owner sees" items={l?.customerSees} icon={<User size={16} className="text-sky-300" aria-hidden />} tone="border-sky-900 bg-sky-950/20" />;
+  return <List testId="lens-customer" title="You, the owner, see" items={l?.customerSees} icon={<User size={16} className="text-sky-300" aria-hidden />} tone="border-sky-900 bg-sky-950/20" />;
 }
 
 export default function PrivacyPage() {
@@ -71,10 +72,10 @@ export default function PrivacyPage() {
   const sel = withLens.find((p) => p.id === selId) ?? withLens.find((p) => p.pool) ?? withLens[0];
   return (
     <>
-      <PageHeader title="Privacy" subtitle="Who can see what about one agent payment. The lists come from the backend per payment; this page does not invent them." />
+      <PageHeader title="Privacy" subtitle="Who can see what about a payment. Amounts, sender, receiver and notes stay private on the public network." />
       {!sel ? (
-        <Notice tone="neutral" title="Open this as the customer to load a payment's lens">
-          The lens is attached to each payment by the backend. Switch to the customer context, or make a payment first.
+        <Notice tone="neutral" title="No payment to show yet">
+          Open this page in the owner view, or make a payment first.
         </Notice>
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -102,8 +103,8 @@ export default function PrivacyPage() {
               <Lens p={sel} lens={lens} />
             </div>
             <p className="text-xs text-zinc-500" data-testid="lens-evidence">
-              Evidence: backend-provided lens for {sel.reference}
-              {sel.pool ? `, sent from the ${sel.pool} pool` : ", not sent"}. Public metadata can include txid, timing, fee and transaction structure. No independent chain check is claimed here.
+              Based on what the VeilPay server reports for {sel.reference}
+              {sel.pool ? ", sent privately" : ", not sent yet"}. The public can still see that a transaction happened, when, and its fee. This page does not check the network itself.
             </p>
           </div>
         </div>

@@ -30,9 +30,9 @@ export function Card({ children, className, title, action, testId }: { children:
   return (
     <section data-testid={testId} className={clsx("rounded-2xl border border-zinc-800 bg-zinc-900 p-5", className)}>
       {(title || action) && (
-        <header className="mb-4 flex items-start justify-between gap-3">
-          {title && <h2 className="text-sm font-semibold tracking-wide text-zinc-200">{title}</h2>}
-          {action}
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          {title && <h2 className="min-w-0 text-sm font-semibold tracking-wide text-zinc-200">{title}</h2>}
+          {action && <div className="min-w-0 shrink-0">{action}</div>}
         </header>
       )}
       {children}

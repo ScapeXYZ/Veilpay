@@ -18,25 +18,25 @@ export type Tone = "neutral" | "info" | "progress" | "success" | "warning" | "da
 
 /** Contract UI copy: authorized = "approved, not paid"; confirming = "sent, awaiting confirmation"; only confirmed = "paid". */
 export const STATUS_COPY: Record<PaymentStatus, { label: string; tone: Tone; help: string }> = {
-  requested: { label: "Requested", tone: "neutral", help: "The agent asked to pay. Policy is being evaluated by the backend." },
-  rejected: { label: "Blocked by policy", tone: "danger", help: "The backend policy refused this payment. No funds moved." },
-  authorized: { label: "Approved, not paid", tone: "info", help: "Policy approved it and the amount is reserved. Nothing has been sent yet." },
-  submitted: { label: "Submitted", tone: "progress", help: "Handed to the wallet for a shielded send." },
-  confirming: { label: "Sent, awaiting confirmation", tone: "progress", help: "Broadcast. Waiting for the required confirmations." },
-  confirmed: { label: "Paid", tone: "success", help: "Confirmed on chain to the required depth." },
-  failed: { label: "Failed", tone: "danger", help: "A definitive failure. The reservation was released." },
-  expired: { label: "Expired", tone: "neutral", help: "The approval expired before it was executed. The reservation was released." },
+  requested: { label: "Requested", tone: "neutral", help: "The agent asked to pay. VeilPay is checking it against the spending rules." },
+  rejected: { label: "Blocked by rules", tone: "danger", help: "This payment broke a spending rule, so it was blocked. No money moved." },
+  authorized: { label: "Approved, not paid", tone: "info", help: "It fits the spending rules and the amount is set aside. Nothing has been sent yet." },
+  submitted: { label: "Sending", tone: "progress", help: "Handed to the wallet to send privately." },
+  confirming: { label: "Sent, awaiting confirmation", tone: "progress", help: "On the network. Waiting for enough blocks to confirm it." },
+  confirmed: { label: "Paid", tone: "success", help: "Confirmed by the network with enough blocks on top." },
+  failed: { label: "Failed", tone: "danger", help: "It definitely did not go through. The set-aside amount was released." },
+  expired: { label: "Expired", tone: "neutral", help: "The approval ran out before it was sent. The set-aside amount was released." },
 };
 
 export const VIOLATION_COPY: Record<ViolationCode, string> = {
-  CAP_EXCEEDED: "Over the per-transaction cap",
-  BUDGET_EXCEEDED: "Over the remaining budget",
-  MERCHANT_NOT_ALLOWED: "Merchant not on the allowlist",
-  AGENT_PAUSED: "Agent is paused",
-  REQUEST_EXPIRED: "Request expired",
+  CAP_EXCEEDED: "More than the max per payment",
+  BUDGET_EXCEEDED: "More than what is left in the budget",
+  MERCHANT_NOT_ALLOWED: "Merchant is not on your approved list",
+  AGENT_PAUSED: "The agent is paused",
+  REQUEST_EXPIRED: "The request ran out of time",
   AMOUNT_MISMATCH: "Amount does not match the invoice",
-  INVOICE_NOT_PAYABLE: "Invoice is not open for payment",
-  POLICY_VERSION_CHANGED: "Policy changed since approval",
+  INVOICE_NOT_PAYABLE: "This invoice cannot be paid any more",
+  POLICY_VERSION_CHANGED: "Spending rules changed since approval",
 };
 
 export const FAILURE_COPY: Record<Failure["code"], string> = {
@@ -117,18 +117,18 @@ export function paymentBadge(p: Payment): { label: string; tone: Tone } {
   const u = unresolvedOf(p);
   if (u?.kind === "operator") return { label: "Requires operator review", tone: "review" };
   if (u?.kind === "awaiting-operator") return { label: "Awaiting operator", tone: "review" };
-  if (u?.kind === "reconciling") return { label: "Submitted, outcome unknown", tone: "warning" };
+  if (u?.kind === "reconciling") return { label: "Sent, outcome unknown", tone: "warning" };
   return STATUS_COPY[p.status];
 }
 
 export function timelineTitle(e: TimelineEvent): string {
   switch (e.kind) {
     case "reorg":
-      return `Reorg: back to ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Network correction: back to ${STATUS_COPY[e.status].label.toLowerCase()}`;
     case "reconciled":
-      return `Reconciled: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Rechecked: ${STATUS_COPY[e.status].label.toLowerCase()}`;
     case "policy_changed":
-      return `Policy changed: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Spending rules changed: ${STATUS_COPY[e.status].label.toLowerCase()}`;
     case "agent_paused":
       return `Agent paused: ${STATUS_COPY[e.status].label.toLowerCase()}`;
     case "late_receipt":
@@ -152,7 +152,7 @@ export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone:
   underpaid: { label: "Underpaid", tone: "danger", help: "Less than the invoice amount arrived. Cannot be acknowledged." },
   duplicate: { label: "Duplicate receipt", tone: "danger", help: "More than one matching receipt was seen. Cannot be acknowledged until resolved." },
   conflicting: { label: "Conflicting receipts", tone: "danger", help: "The merchant wallet saw observations that disagree. Cannot be acknowledged until resolved." },
-  reorged: { label: "Reorged", tone: "warning", help: "The receipt dropped out of the best chain. Not received until it is observed again at depth." },
+  reorged: { label: "Moved back by the network", tone: "warning", help: "The network replaced the block holding this receipt. Not received until it is confirmed again." },
 };
 
 /**

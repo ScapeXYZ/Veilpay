@@ -43,10 +43,10 @@ export function RequestComposer({
     if (!mode.canWrite) return;
     setInputErr(null);
     const agentId = session?.agentId;
-    if (!agentId) return setInputErr("This session has no agent. Switch to the customer context.");
+    if (!agentId) return setInputErr("No agent is set up for this view. Switch to the owner view.");
     const amountZat = parseZecInput(zec);
     if (!amountZat) return setInputErr("Enter a ZEC amount with at most 8 decimals.");
-    if (!invoiceId.trim()) return setInputErr("Enter the invoice id the merchant gave you.");
+    if (!invoiceId.trim()) return setInputErr("Enter the invoice ID the merchant gave you.");
     const body = { agentId, invoiceId: invoiceId.trim(), amountZat, reference: reference.slice(0, 64) };
     const bodyKey = JSON.stringify(body);
     const key = attempt && attempt.body === bodyKey && req.isError ? attempt.key : newIdempotencyKey();
@@ -65,7 +65,7 @@ export function RequestComposer({
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.3fr_0.7fr]">
-        <Field label="Invoice id" hint={api.mode === "live" ? "From the merchant (create one in the Merchant view)." : undefined}>
+        <Field label="Invoice ID" hint={api.mode === "live" ? "From the merchant (create one on the Merchant page)." : undefined}>
           <input className={inputCls} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} spellCheck={false} />
         </Field>
         <Field label="Amount (ZEC)">

@@ -12,10 +12,10 @@ function ModeNote() {
   return (
     <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-xs" data-testid="landing-mode">
       <div className="flex items-center gap-1.5 font-semibold text-zinc-200">
-        <Lock size={12} aria-hidden /> Mainnet observation only · execution disabled
+        <Lock size={12} aria-hidden /> Main Zcash network: watch only, sending disabled
       </div>
       <div className="text-zinc-400">
-        This deployment: <span className="text-zinc-200">{m.label}</span>
+        Right now: <span className="text-zinc-200">{m.label}</span>
       </div>
     </div>
   );
@@ -52,23 +52,23 @@ export default function Landing() {
       <section className="veil">
         <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 py-14 lg:grid-cols-[1.1fr_0.9fr] lg:px-8 lg:py-24">
           <div>
-            <Badge tone="info" className="mb-5">Shielded ZEC · Zecathon 2026</Badge>
+            <Badge tone="info" className="mb-5">Private Zcash payments · Zecathon 2026</Badge>
             <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-zinc-50 sm:text-5xl lg:text-[54px]" data-testid="hero-title">
               Give AI agents permission to pay, not permission to overspend.
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-zinc-300">Set limits. Inspect decisions. Verify shielded payment receipts.</p>
+            <p className="mt-5 max-w-xl text-lg text-zinc-300">VeilPay lets your AI agent pay for things within limits you set. Every payment is checked against your rules, kept private, and confirmed by the merchant.</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/demo" data-testid="cta-demo" className="inline-flex items-center gap-2 rounded-lg bg-accent-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
-                Explore the demo <ArrowRight size={15} aria-hidden />
+                Watch the 2-minute demo <ArrowRight size={15} aria-hidden />
               </Link>
               <Link href="/app" data-testid="cta-dashboard" className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-900">
-                View dashboard
+                Open VeilPay
               </Link>
             </div>
           </div>
           <div className="flex flex-col gap-3" aria-label="Product preview (simulation)">
-            <PreviewRow tone="blocked" label="Simulation" icon={<Ban size={16} className="text-rose-400" aria-hidden />} title="Blocked: over the per-payment cap" amount="0.75000000 ZEC" note="Cap 0.25 ZEC. No transfer happened, nothing was reserved." />
-            <PreviewRow tone="allowed" label="Simulation" icon={<CheckCircle2 size={16} className="text-emerald-400" aria-hidden />} title="Allowed: policy approved · not paid" amount="0.12000000 ZEC" note="Staged for an operator. Paid only once confirmations are observed." />
+            <PreviewRow tone="blocked" label="Simulation" icon={<Ban size={16} className="text-rose-400" aria-hidden />} title="Blocked: over the max per payment" amount="0.75000000 ZEC" note="Your limit is 0.25 ZEC. No money moved." />
+            <PreviewRow tone="allowed" label="Simulation" icon={<CheckCircle2 size={16} className="text-emerald-400" aria-hidden />} title="Allowed: within your rules" amount="0.12000000 ZEC" note="Ready to send. It counts as paid once the network confirms it." />
             <ModeNote />
           </div>
         </div>
@@ -77,9 +77,9 @@ export default function Landing() {
       <section className="mx-auto max-w-6xl px-4 py-12 lg:px-8">
         <ol className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="How it works">
           {[
-            { n: 1, t: "Set policy", d: "Per-payment cap, total budget, allowed merchants. Enforced by the backend.", i: <ShieldCheck size={16} aria-hidden /> },
-            { n: 2, t: "Agent requests", d: "Each request gets a decision with the exact limit it hit, or a reservation.", i: <ScrollText size={16} aria-hidden /> },
-            { n: 3, t: "Merchant checks receipt", d: "The merchant verifies the shielded receipt for its own invoice.", i: <Store size={16} aria-hidden /> },
+            { n: 1, t: "Set the rules", d: "A max per payment, a total budget, and which merchants the agent may pay.", i: <ShieldCheck size={16} aria-hidden /> },
+            { n: 2, t: "The agent asks to pay", d: "VeilPay approves it, or blocks it and shows exactly which rule it broke.", i: <ScrollText size={16} aria-hidden /> },
+            { n: 3, t: "The merchant confirms", d: "The merchant checks that its invoice was paid, without seeing anything else.", i: <Store size={16} aria-hidden /> },
           ].map((s) => (
             <li key={s.n} className="flex gap-3 rounded-2xl border border-zinc-800 p-4">
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-zinc-800 font-mono text-xs text-zinc-200">{s.n}</span>
@@ -93,14 +93,14 @@ export default function Landing() {
       </section>
 
       <section className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 pb-16 md:grid-cols-3 lg:px-8">
-        <Feature icon={<ShieldCheck size={17} aria-hidden />} title="Policy protection">
-          Policy lives on the server, not in the agent and not in this page. Every request is checked, and checked again before anything is staged.
+        <Feature icon={<ShieldCheck size={17} aria-hidden />} title="Rules the agent cannot bend">
+          Your rules live on the VeilPay server, not in the agent. Every payment is checked, then checked again right before it is sent.
         </Feature>
-        <Feature icon={<EyeOff size={17} aria-hidden />} title="Selective privacy">
-          Shielded payments keep amount, sender, recipient and memo off the public chain. Timing, fees and transaction structure can still be visible.
+        <Feature icon={<EyeOff size={17} aria-hidden />} title="Private by default">
+          Amount, sender, receiver and notes stay hidden from the public. Only the fact that a payment happened, and when, can be seen.
         </Feature>
-        <Feature icon={<FileCheck2 size={17} aria-hidden />} title="Honest evidence">
-          A confirmation counts only when the backend observes it. Policy approved, submitted, observed and merchant verified are shown as different states.
+        <Feature icon={<FileCheck2 size={17} aria-hidden />} title="No pretend “paid”">
+          A payment shows as paid only when the network confirms it. Approved, sent, confirmed and merchant-checked are always shown separately.
         </Feature>
       </section>
     </PublicShell>

@@ -12,8 +12,9 @@ import { useNetworkMode } from "@/lib/api/data-source";
 import { useApi, usePayment } from "@/lib/api/hooks";
 import { SEED_IDS } from "@/lib/api/fixtures";
 import type { Payment } from "@/lib/contract/schemas";
+import { Term } from "@/components/term";
 
-const STEPS = ["Review invoice", "Policy check", "Stage", "Observe", "Merchant verifies"] as const;
+const STEPS = ["Invoice", "Rules check", "Ready to send", "On the network", "Merchant confirms"] as const;
 
 function stepOf(p: Payment | null): number {
   if (!p) return 0;
@@ -44,8 +45,8 @@ function NewPayment() {
   const mock = api.mode === "mock";
   const presets: { id: string; label: string; p: RequestPreset }[] = mock
     ? [
-        { id: "within", label: "Within policy · 0.12 ZEC", p: { invoiceId: SEED_IDS.happyDemoInvoice, zec: "0.12", reference: "INV-1001 single-origin beans" } },
-        { id: "over", label: "Over the cap · 0.75 ZEC", p: { invoiceId: SEED_IDS.blockedDemoInvoice, zec: "0.75", reference: "INV-1002 espresso machine" } },
+        { id: "within", label: "Within the rules · 0.12 ZEC", p: { invoiceId: SEED_IDS.happyDemoInvoice, zec: "0.12", reference: "INV-1001 single-origin beans" } },
+        { id: "over", label: "Over the limit · 0.75 ZEC", p: { invoiceId: SEED_IDS.blockedDemoInvoice, zec: "0.75", reference: "INV-1002 espresso machine" } },
       ]
     : [{ id: "blank", label: "Blank", p: { invoiceId: "", zec: "", reference: "" } }];
   const [preset, setPreset] = useState(presets[0]);
@@ -56,7 +57,7 @@ function NewPayment() {
   if (mode.kind === "mainnet_readonly")
     return (
       <Notice tone="info" title={<span className="flex items-center gap-2"><Lock size={14} aria-hidden /> No new payments on mainnet</span>} testId="new-payment-mainnet">
-        VeilPay observes mainnet; it does not request, stage or send there. Existing observations are in <Link href="/app/activity" className="text-accent-300 underline">Activity</Link>.
+        VeilPay only watches the main network; it never requests or sends payments there. Existing observations are in <Link href="/app/activity" className="text-accent-300 underline">Activity</Link>.
       </Notice>
     );
 
@@ -75,28 +76,28 @@ function NewPayment() {
               ))}
             </div>
           )}
-          <RequestComposer key={preset.id} preset={preset.p} cta="Request payment (policy check)" onResult={setCreated} testId="request-new" />
+          <RequestComposer key={preset.id} preset={preset.p} cta="Check against my rules" onResult={setCreated} testId="request-new" />
           <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-zinc-800 pt-4 text-sm">
-            <dt className="text-zinc-500">Network</dt><dd className="text-zinc-200">{mode.kind === "mock" ? "Simulation" : "Testnet"}</dd>
-            <dt className="text-zinc-500">Receiver</dt><dd className="text-zinc-300">Resolved by the backend from the invoice. Never put in a URL.</dd>
-            <dt className="text-zinc-500">Network fee</dt><dd className="text-zinc-400" data-testid="fee-unavailable">Unavailable · not estimated in the browser</dd>
-            <dt className="text-zinc-500">Total debit</dt><dd className="text-zinc-400">Amount plus a fee the operator approves</dd>
+            <dt className="text-zinc-500">Network</dt><dd className="text-zinc-200">{mode.kind === "mock" ? "Practice (simulation)" : <Term k="testnet">Test network</Term>}</dd>
+            <dt className="text-zinc-500">Paid to</dt><dd className="text-zinc-300">The merchant on the invoice. VeilPay looks up the address; you never paste one.</dd>
+            <dt className="text-zinc-500">Network fee</dt><dd className="text-zinc-400" data-testid="fee-unavailable">Not shown yet · never guessed</dd>
+            <dt className="text-zinc-500">Total</dt><dd className="text-zinc-400">The amount, plus a small network fee</dd>
           </dl>
         </Card>
         <div className="flex flex-col gap-4">
           {!p ? (
             <Card title="What happens next">
               <ol className="space-y-2 text-sm text-zinc-400">
-                <li>2. The backend checks cap, budget, merchant and invoice. A rejection names the exact limit and moves no funds.</li>
-                <li>3. Approved means reserved, not paid.{mode.kind === "testnet_manual" ? " It is then staged for an operator." : ""}</li>
-                <li>4. Only confirmations the backend observes count.</li>
-                <li>5. The merchant verifies the receipt for its own invoice.</li>
+                <li>2. VeilPay checks the amount, budget and merchant against your rules. If it is blocked you see exactly which rule, and no money moves.</li>
+                <li>3. Approved means the money is set aside, not paid yet.{mode.kind === "testnet_manual" ? " An operator then sends it." : ""}</li>
+                <li>4. It counts as paid only once the network confirms it.</li>
+                <li>5. The merchant checks that its invoice was paid.</li>
               </ol>
             </Card>
           ) : p.status === "rejected" ? (
-            <Card title="2 · Policy check" testId="new-rejected">
+            <Card title="2 · Rules check" testId="new-rejected">
               <DecisionPanel d={p.decision} />
-              <p className="mt-3 text-sm text-zinc-400">No transfer happened and nothing was reserved. The limit is the owner&apos;s; change the policy only if the owner agrees, never to get one request through.</p>
+              <p className="mt-3 text-sm text-zinc-400">No money moved and nothing was set aside. Raise the limit in Spending rules only if you really mean to, not just to push one payment through.</p>
             </Card>
           ) : (
             <Card testId="new-approved">
@@ -115,7 +116,7 @@ function NewPayment() {
 export default function NewPaymentPage() {
   return (
     <>
-      <PageHeader title="New payment request" subtitle="One decision at a time: the exact request, the backend's policy result, then evidence. Nothing is paid until it is observed." />
+      <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the network confirms it." />
       <RequireContext ctx="customer">
         <NewPayment />
       </RequireContext>

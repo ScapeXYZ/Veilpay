@@ -29,7 +29,7 @@ describe("reorg states", () => {
     expect(p.timeline.some((e) => e.kind === "reconciled")).toBe(true);
     renderDetail(p);
     expect(screen.getByTestId("failure-definitive")).toHaveTextContent("EXPIRED_UNMINED");
-    expect(within(screen.getByTestId("timeline")).getByText(/^Reconciled:/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("timeline")).getByText(/^Rechecked:/)).toBeInTheDocument();
   });
 
   describe("mock reorg on a live payment", () => {

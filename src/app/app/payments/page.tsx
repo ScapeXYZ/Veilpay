@@ -94,7 +94,7 @@ function NewButton() {
 export default function PaymentsPage() {
   return (
     <>
-      <PageHeader title="Payments" subtitle="Every status, confirmation and failure here is the backend's. Unresolved sends are shown as unresolved, never as failed, and never resent." right={<NewButton />} />
+      <PageHeader title="Payments" subtitle="Every payment your agent asked for, and where it stands. A payment with an unknown outcome is never resent." right={<NewButton />} />
       <RequireContext ctx="customer">
         <Payments />
       </RequireContext>

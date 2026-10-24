@@ -23,7 +23,7 @@ describe("unresolved payments (Temi caveat 1)", () => {
     const p = byId("pay_reconcile0001");
     const u = unresolvedOf(p);
     expect(u?.kind).toBe("reconciling");
-    expect(paymentBadge(p).label).toBe("Submitted, outcome unknown");
+    expect(paymentBadge(p).label).toBe("Sent, outcome unknown");
   });
 
   it("definitive failures and normal states are not unresolved", () => {
@@ -36,8 +36,8 @@ describe("unresolved payments (Temi caveat 1)", () => {
 
 describe("timeline", () => {
   it("labels reorg as a backward move and keeps reconciled events distinct", () => {
-    expect(timelineTitle({ status: "confirming", kind: "reorg", at: "2026-10-23T00:00:00Z" })).toMatch(/^Reorg: back to/);
-    expect(timelineTitle({ status: "failed", kind: "reconciled", at: "2026-10-23T00:00:00Z" })).toMatch(/^Reconciled:/);
+    expect(timelineTitle({ status: "confirming", kind: "reorg", at: "2026-10-23T00:00:00Z" })).toMatch(/^Network correction: back to/);
+    expect(timelineTitle({ status: "failed", kind: "reconciled", at: "2026-10-23T00:00:00Z" })).toMatch(/^Rechecked:/);
   });
 });
 

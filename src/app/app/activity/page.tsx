@@ -13,11 +13,11 @@ import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
 
 const VIEWS: { id: string; label: string; match: (p: Payment) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
-  { id: "blocked", label: "Blocked", match: (p) => p.status === "rejected" },
-  { id: "awaiting", label: "Awaiting operator", match: (p) => unresolvedOf(p)?.kind === "awaiting-operator" },
+  { id: "blocked", label: "Blocked by rules", match: (p) => p.status === "rejected" },
+  { id: "awaiting", label: "Waiting for operator", match: (p) => unresolvedOf(p)?.kind === "awaiting-operator" },
   { id: "unknown", label: "Outcome unknown", match: (p) => { const k = unresolvedOf(p)?.kind; return k === "operator" || k === "reconciling"; } },
-  { id: "confirming", label: "Confirming", match: (p) => (p.status === "submitted" || p.status === "confirming") && !unresolvedOf(p) },
-  { id: "verified", label: "Confirmed observations", match: (p) => p.status === "confirmed" },
+  { id: "confirming", label: "Being confirmed", match: (p) => (p.status === "submitted" || p.status === "confirming") && !unresolvedOf(p) },
+  { id: "verified", label: "Paid", match: (p) => p.status === "confirmed" },
 ];
 
 function Alerts({ items }: { items: Payment[] }) {
@@ -27,12 +27,12 @@ function Alerts({ items }: { items: Payment[] }) {
   return (
     <div className="flex flex-col gap-2" data-testid="activity-alerts">
       {h?.chainWatcher.deepReorgAlert && (
-        <Notice tone="danger" title={<span className="flex items-center gap-2"><AlertTriangle size={15} aria-hidden />Deep reorg beyond the {h.chainWatcher.watchDepth}-block watch depth</span>}>
-          Payments past that depth are not re-tracked automatically. An operator is reviewing; dependent acknowledgments may be invalidated.
+        <Notice tone="danger" title={<span className="flex items-center gap-2"><AlertTriangle size={15} aria-hidden />The network replaced more than {h.chainWatcher.watchDepth} recent blocks</span>}>
+          Older payments are not re-checked automatically. An operator is reviewing, and merchant confirmations that depend on them may be withdrawn.
         </Notice>
       )}
       {review > 0 && (
-        <Notice tone="review" title={<span className="flex items-center gap-2"><Wrench size={15} aria-hidden />{review} {review === 1 ? "payment requires" : "payments require"} operator review · Do not resend</span>} />
+        <Notice tone="review" title={<span className="flex items-center gap-2"><Wrench size={15} aria-hidden />{review} {review === 1 ? "payment requires" : "payments require"} operator review · do not resend</span>} />
       )}
     </div>
   );
@@ -64,12 +64,12 @@ function ActivityTable() {
             })}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500" data-testid="loaded-results">Loaded results · {items.length}{data?.nextCursor ? "+" : ""}</span>
-            <Button variant="secondary" onClick={() => refetch()} busy={isFetching} data-testid="refresh-activity"><RefreshCw size={13} aria-hidden /> Refresh evidence</Button>
+            <span className="text-xs text-zinc-500" data-testid="loaded-results">Showing {items.length}{data?.nextCursor ? "+" : ""}</span>
+            <Button variant="secondary" onClick={() => refetch()} busy={isFetching} data-testid="refresh-activity"><RefreshCw size={13} aria-hidden /> Refresh</Button>
           </div>
         </div>
         {shown.length === 0 ? (
-          <p className="p-5 text-sm text-zinc-500">Nothing in this view among the loaded results.</p>
+          <p className="p-5 text-sm text-zinc-500">Nothing here right now.</p>
         ) : (
           <table className="block w-full text-sm md:table" data-testid="activity-table">
             <thead className="hidden text-left text-xs uppercase tracking-wide text-zinc-500 md:table-header-group">
@@ -104,7 +104,7 @@ function ActivityTable() {
           </table>
         )}
       </Card>
-      <p className="text-xs text-zinc-500">This is payment and verification history, not a complete security audit log. Views filter the loaded results only. Refresh re-reads; it never resends.</p>
+      <p className="text-xs text-zinc-500">This is payment history, not a full security log. Filters apply to the payments shown. Refresh only re-reads; it never sends again.</p>
     </>
   );
 }
@@ -112,7 +112,7 @@ function ActivityTable() {
 export default function ActivityPage() {
   return (
     <>
-      <PageHeader title="Activity" subtitle="Decisions, operator stages, wallet observations, reorgs and verification, in order." />
+      <PageHeader title="Activity" subtitle="Everything that happened to your agent's payments, newest first." />
       <RequireContext ctx="customer">
         <ActivityTable />
       </RequireContext>
