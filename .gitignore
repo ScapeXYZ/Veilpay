@@ -5,3 +5,10 @@ node_modules/
 target/
 dist/
 .next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
