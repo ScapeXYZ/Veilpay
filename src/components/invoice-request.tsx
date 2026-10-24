@@ -5,17 +5,20 @@ import { QRCodeSVG } from "qrcode.react";
 import type { Invoice } from "@/lib/contract/schemas";
 import { formatZec } from "@/lib/zat";
 import { fmtTime } from "@/lib/present";
+import { isSaplingTestnetAddress } from "@/lib/zcash-address";
 import { Badge, Button, ErrorBox } from "./ui";
 
 /** ZIP-321 amount is decimal ZEC, derived without floating point. Never invent an address. */
-export function invoicePaymentUri(invoice: Invoice): string | null {
-  if (!invoice.payTo) return null;
+export function invoicePaymentUri(invoice: Invoice, demo = false): string | null {
+  if (demo || invoice.paymentPayload || invoice.status !== "open" || !invoice.payTo || !isSaplingTestnetAddress(invoice.payTo)) return null;
+  if (invoice.expiresAt && Date.parse(invoice.expiresAt) <= Date.now()) return null;
+  if (BigInt(invoice.amountZat) < 1n || BigInt(invoice.amountZat) > 2100000000000000n) return null;
   const amount = formatZec(invoice.amountZat, { unit: false }).replaceAll(",", "");
   return `zcash:${encodeURIComponent(invoice.payTo)}?amount=${amount}&label=${encodeURIComponent(invoice.reference)}`;
 }
 
 export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: boolean }) {
-  const uri = invoicePaymentUri(invoice);
+  const uri = invoicePaymentUri(invoice, demo);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const payable = invoice.status === "open";
@@ -42,7 +45,7 @@ export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: bool
           }}>{copied ? "Copied payment request" : "Copy payment request"}</Button>
           <p role="status" className="mt-2 text-xs text-emerald-300">{copied ? "Ready to share with your customer." : ""}</p>
         </>
-      ) : <p className="mt-3 text-sm text-zinc-300">{!payable ? "This invoice is no longer payable. Create a new invoice for a new payment." : "Waiting for the backend to provide a receiving address. No payment QR is available yet."}</p>}
+      ) : <div className="mt-3 rounded-lg border border-dashed border-zinc-600 p-4 text-sm text-zinc-300" data-testid="invoice-no-qr">{!payable ? "This invoice is no longer payable. Create a new invoice for a new payment." : demo || invoice.paymentPayload ? "DEMO ONLY. No payment QR or wallet request is generated. Do not send funds." : "No validated, unexpired Sapling testnet receiving address is available. No payment QR is generated; unsupported address formats fail closed."}</div>}
       <p className="mt-2 text-xs text-zinc-400">Sharing a request does not confirm payment. Status changes only when the backend verifies receipt.</p>
       {invoice.expiresAt && <p className="mt-1 text-xs text-zinc-400">Expires: {fmtTime(invoice.expiresAt)}</p>}
       {error && <ErrorBox>{error}</ErrorBox>}

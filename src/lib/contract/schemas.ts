@@ -1,5 +1,5 @@
 /**
- * Zod schemas for VeilPay OpenAPI v1.1 (contract sha 39f4d75786a8, frozen).
+ * Zod schemas for the latest reviewed VeilPay OpenAPI integration contract.
  *
  * Hand-written, one schema per `components/schemas` entry. `contract-sync.test.ts`
  * parses the YAML and fails if any required field, enum value, or property name
@@ -17,11 +17,11 @@ export const Zatoshi = z.string().regex(/^(0|[1-9][0-9]{0,15})$/, "zatoshi must 
 export const Health = z.object({
   status: z.enum(["ok", "degraded", "down"]),
   network: z.enum(["testnet", "regtest", "mainnet"]),
-  wallet: z.enum(["ready", "syncing", "unavailable"]),
-  walletBackend: z.enum(["zingolib", "zallet", "mock"]),
+  wallet: z.enum(["ready", "syncing", "unavailable", "broadcast_disabled"]),
+  walletBackend: z.enum(["zingolib", "zingo", "zallet", "mock"]),
   chainHeight: z.number().int().nullable(),
   confirmationsRequired: z.number().int().min(1),
-  mode: z.enum(["real", "mock"]),
+  mode: z.enum(["real", "mock", "disabled"]),
   reconciler: z.object({
     lastRunAt: dateTime.nullable(),
     unresolved: z.number().int(),
@@ -147,6 +147,7 @@ export const FailureCode = z.enum([
   "BROADCAST_REJECTED",
   "EXPIRED_UNMINED",
   "OUTCOME_UNKNOWN",
+  "WALLET_BROADCAST_DISABLED",
 ]);
 
 export const Failure = z.object({
@@ -215,14 +216,20 @@ export const Invoice = z.object({
   reference: z.string(),
   amountZat: Zatoshi,
   payTo: z.string().optional(),
+  paymentPayload: z.object({
+    format: z.literal("veilpay-mock-v1"),
+    uri: z.string(),
+    mock: z.literal(true),
+    spendable: z.literal(false),
+  }).optional(),
   status: z.enum(["open", "paid", "paid_late", "expired"]),
   expiresAt: dateTime.optional(),
   createdAt: dateTime,
 });
 
 export const InvoiceCreate = z.object({
-  reference: z.string().max(64),
-  amountZat: Zatoshi,
+  reference: z.string().min(1).max(64),
+  amountZat: Zatoshi.refine((value) => BigInt(value) >= 1n && BigInt(value) <= 2100000000000000n, "Amount must be 1 to 2100000000000000 zatoshis"),
   expiresAt: dateTime.optional(),
 });
 

@@ -44,6 +44,21 @@ describe("PaymentDetail", () => {
     expect(screen.queryByTestId("execute")).toBeNull();
   });
 
+  it.each(["authorized", "confirmed", "failed", "expired"] as const)("unknown wallet overrides %s without offering a resend", (status) => {
+    const base = seed("pay_reconcile0001");
+    renderDetail({ ...base, status, failure: null, walletOperation: { ...base.walletOperation!, state: "unknown", needsOperator: false } });
+    expect(screen.getByTestId("unresolved-reconciling")).toBeInTheDocument();
+    expect(screen.queryByTestId("execute")).toBeNull();
+    expect(screen.queryByTestId("failure-definitive")).toBeNull();
+    expect(within(screen.getByTestId("send-record")).queryByText("Paid", { exact: true })).toBeNull();
+  });
+
+  it("operator review overrides authorized and disables execution", () => {
+    renderDetail({ ...seed("pay_operator00001"), status: "authorized" });
+    expect(screen.getByTestId("unresolved-operator")).toBeInTheDocument();
+    expect(screen.queryByTestId("execute")).toBeNull();
+  });
+
   it("reorg shows a backward move in the timeline", () => {
     renderDetail(seed("pay_reorged000001"));
     const tl = screen.getByTestId("timeline");

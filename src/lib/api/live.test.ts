@@ -35,6 +35,16 @@ describe("Live API contract", () => {
     expect(fetcher.mock.calls[1][0]).toBe("/api/merchant/invoices");
     expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "POST", credentials: "include", headers: { "X-CSRF-Token": session.csrfToken, "Idempotency-Key": "idem_backend_test" }, body: JSON.stringify(body) });
   });
+  it("reads invoice detail with its validated id and no cache", async () => {
+    const mock = new MockApiClient({ latencyMs: 0 });
+    await mock.createDemoSession("merchant");
+    const invoice = await mock.createInvoice({ reference: "lookup", amountZat: "1" }, "idem_lookup_test");
+    const fetcher = vi.fn().mockResolvedValue(response(invoice));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await new LiveApiClient().getInvoice(invoice.id)).toEqual(invoice);
+    expect(fetcher.mock.calls[0][0]).toBe(`/api/merchant/invoices/${invoice.id}`);
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "GET", credentials: "include", cache: "no-store" });
+  });
   it("surfaces backend policy errors without fabricating a successful response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ code: "NOT_FOUND", message: "Invoice not found" }, 404)));
     await expect(new LiveApiClient().getPayment("pay_missing001")).rejects.toMatchObject({ status: 404, body: { code: "NOT_FOUND" } });

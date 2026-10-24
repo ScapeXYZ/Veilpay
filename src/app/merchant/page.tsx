@@ -7,7 +7,7 @@ import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag, useDataSource } from "@/components/source";
 import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec, inputCls } from "@/components/ui";
 import { isMockClient } from "@/lib/api";
-import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
+import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Acknowledgment } from "@/lib/contract/schemas";
 import { VERIFICATION_COPY, ackEligibility, fmtTime } from "@/lib/present";
@@ -91,8 +91,8 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
 function CreateInvoice() {
   const source = useDataSource();
   const create = useCreateInvoice();
-  const { data: invoices } = useInvoices();
-  const currentInvoice = invoices?.items?.find((i) => i.id === create.data?.id) ?? create.data;
+  const detail = useInvoice(create.data?.id ?? null);
+  const currentInvoice = !detail.error && !detail.isFetching ? detail.data : undefined;
   const handoff = useHandoff();
   const [reference, setReference] = useState("INV-2001 cold brew kegs");
   const [zec, setZec] = useState("0.2");
@@ -128,9 +128,11 @@ function CreateInvoice() {
         >
           Create invoice
         </Button>
-        <span className="text-xs text-zinc-500">A fresh receiving address per invoice.</span>
+        <span className="text-xs text-zinc-500">Mock invoices cannot receive funds.</span>
       </div>
       {(inputErr || create.error) && <div className="mt-3"><ErrorBox>{inputErr ?? errorText(create.error)}</ErrorBox></div>}
+      {detail.error && <ErrorBox>{errorText(detail.error)}</ErrorBox>}
+      {create.data && detail.isFetching && <p role="status">Refreshing invoice status...</p>}
       {currentInvoice && <>
         <p role="status" className="mt-3 text-sm text-emerald-300">Invoice created. Payment status below comes from the backend.</p>
         <InvoiceRequest key={currentInvoice.id} invoice={currentInvoice} demo={source !== "real"} />

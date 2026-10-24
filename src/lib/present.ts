@@ -45,6 +45,7 @@ export const FAILURE_COPY: Record<Failure["code"], string> = {
   BROADCAST_REJECTED: "The network rejected the transaction",
   EXPIRED_UNMINED: "The transaction expired without being mined",
   OUTCOME_UNKNOWN: "Outcome unknown",
+  WALLET_BROADCAST_DISABLED: "Broadcasting is disabled; no transaction was created",
 };
 
 export const WALLET_OP_COPY: Record<NonNullable<WalletOperation>["state"], string> = {
@@ -76,7 +77,7 @@ export function unresolvedOf(p: Payment): Unresolved {
       body: "The backend could not determine whether this send happened. It is not marked failed and it will never be resent automatically. An operator will resolve it from the wallet history.",
     };
   }
-  const unknown = p.failure?.code === "OUTCOME_UNKNOWN" || (p.status === "submitted" && (op?.state === "pending" || op?.state === "unknown"));
+  const unknown = p.failure?.code === "OUTCOME_UNKNOWN" || op?.state === "unknown" || op?.state === "pending";
   if (unknown) {
     return {
       kind: "reconciling",
@@ -139,12 +140,14 @@ export function ackEligibility(v: Verification): { allowed: boolean; reason: str
   return { allowed: false, reason: "Receipt is not verified yet." };
 }
 
-export type DataSource = "mock" | "real" | "unknown";
+export type DataSource = "mock" | "real" | "disabled" | "unknown";
 
 export function dataSourceOf(health: Health | undefined, clientMode: "mock" | "live"): DataSource {
   if (clientMode === "mock") return "mock";
   if (!health) return "unknown";
-  return health.mode === "mock" ? "mock" : "real";
+  if (health.mode === "disabled" || health.wallet === "broadcast_disabled") return "disabled";
+  if (health.mode === "mock") return "mock";
+  return health.network === "testnet" ? "real" : "unknown";
 }
 
 export function shortId(id: string): string {

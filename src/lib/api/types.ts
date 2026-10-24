@@ -40,6 +40,7 @@ export interface ApiClient {
   acknowledgePayment(paymentId: string, body: { note?: string }, idempotencyKey: string): Promise<Acknowledgment>;
   createInvoice(body: InvoiceCreate, idempotencyKey: string): Promise<Invoice>;
   listInvoices(): Promise<InvoiceList>;
+  getInvoice(invoiceId: string): Promise<Invoice>;
 }
 
 export class ApiError extends Error {

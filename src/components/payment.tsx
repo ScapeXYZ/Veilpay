@@ -137,7 +137,7 @@ function FailureNotice({ p }: { p: Payment }) {
 
 function ExecuteBlock({ p }: { p: Payment }) {
   const ex = useExecutePayment();
-  if (p.status !== "authorized") return null;
+  if (p.status !== "authorized" || unresolvedOf(p)) return null;
   const err = ex.error;
   const retryable = err instanceof ApiError && err.body.code === "WALLET_UNAVAILABLE";
   return (

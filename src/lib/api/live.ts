@@ -147,4 +147,8 @@ export class LiveApiClient implements ApiClient {
   listInvoices() {
     return this.call(S.InvoiceList, "GET", "/merchant/invoices");
   }
+
+  getInvoice(invoiceId: string) {
+    return this.call(S.Invoice, "GET", `/merchant/invoices/${encodeURIComponent(invoiceId)}`);
+  }
 }

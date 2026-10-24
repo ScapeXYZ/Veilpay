@@ -84,6 +84,11 @@ export function usePayment(id: string | null, enabled = true) {
   });
 }
 
+export function useInvoice(id: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: ["invoice", id], queryFn: () => api.getInvoice(id!), enabled: !!id, refetchInterval: POLL_MS, retry: false });
+}
+
 export function useInvoices(enabled = true) {
   const api = useApi();
   return useQuery({ queryKey: qk.invoices, queryFn: () => api.listInvoices(), enabled, refetchInterval: POLL_MS });

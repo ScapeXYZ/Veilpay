@@ -438,6 +438,7 @@ export class MockApiClient implements ApiClient, MockControls {
         createdAt: this.iso(),
         expiresAt: b.expiresAt ?? new Date(this.now().getTime() + 3600_000).toISOString(),
       };
+      inv.paymentPayload = { format: "veilpay-mock-v1", uri: `veilpay-mock:${inv.id}?amountZat=${inv.amountZat}`, mock: true, spendable: false };
       this.invoices.unshift(inv);
       return inv;
     });
@@ -447,6 +448,14 @@ export class MockApiClient implements ApiClient, MockControls {
   async listInvoices() {
     this.requireCtx("merchant");
     return this.respond(S.InvoiceList, { items: this.invoices });
+  }
+
+  async getInvoice(invoiceId: string) {
+    this.requireCtx("merchant");
+    const invoice = this.invoices.find((item) => item.id === invoiceId && item.merchantId === MERCHANT_ID);
+    if (!invoice) err(404, "NOT_FOUND", "Invoice not found.");
+    if (invoice.status === "open" && invoice.expiresAt && Date.parse(invoice.expiresAt) <= this.now().getTime()) invoice.status = "expired";
+    return this.respond(S.Invoice, invoice);
   }
 
   // ---------- MockControls (never part of the live client) ----------

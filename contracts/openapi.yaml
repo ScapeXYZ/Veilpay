@@ -181,6 +181,11 @@ tags:
 - name: merchant
 security:
 - session: []
+x-current-implementation:
+  wallet: Built-in Zingo adapter has no CLI or network transport and cannot open wallets or broadcast. Its observe result is always unknown.
+  execution: Non-mock execution is durable and fail-closed. Trusted adapter fixtures validate lifecycle transitions without real transactions.
+  finality: Sender-side confirmation does not mark an invoice paid. Independent merchant verification and reorg watching remain future work.
+  reconciliation: Startup and every 60 seconds; 30-second adapter deadlines; operator flag after two hours unknown. No automatic resubmission.
 paths:
   /health:
     get:
@@ -523,12 +528,20 @@ paths:
     post:
       tags:
       - payments
-      summary: Execute an authorized payment (real shielded send)
-      description: Only from status=authorized. Policy and budget re-checked atomically (see BUDGET RESERVATION).
-        Atomic authorized->submitted CAS before the wallet call (see EXECUTE IS SINGLE-SEND). A same-key replay
-        (including a concurrent one) waits for and returns the ORIGINAL response. A duplicate with a DIFFERENT key,
-        or a losing concurrent attempt, returns 202 with the CURRENT Payment state and never sends. A wallet timeout
-        after the transition leaves status=submitted with failure.code=OUTCOME_UNKNOWN (no retry, backend reconciles).
+      summary: Record a single durable execution attempt; live broadcasting disabled
+      description: >-
+        Only from authorized. Current policy, budget, and invoice eligibility are checked
+        atomically. Mock mode preserves the existing atomic simulation. With WALLET_BACKEND=zingo,
+        intent, reservation, submitted state, and an immutable 202 response snapshot commit
+        before the adapter is called. Same-key retries return that snapshot, which may still
+        show pending; GET the payment for current state. Different-key retries return the
+        current payment without dispatching again. A durable claim precedes the adapter;
+        cancellation or timeout becomes unknown and holds the reservation. Startup and the
+        60-second reconciler observe only and never submit. Unknown after two hours requires
+        operator attention. At most one unresolved or successful external operation may own
+        an invoice, including across distinct payments. Mainnet broadcasts are unconditionally
+        blocked. The built-in Zingo adapter creates no transaction on either network; it
+        reports WALLET_BROADCAST_DISABLED and the reservation is released exactly once.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -592,6 +605,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: VERIFICATION_UNAVAILABLE for non-mock operations; independent merchant receipt verification is not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       x-role: merchant
       security:
       - session: []
@@ -628,7 +647,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: NOT_YET_RECEIVED, ALREADY_ACKNOWLEDGED or AMOUNT_MISMATCH
+          description: NOT_YET_RECEIVED, ALREADY_ACKNOWLEDGED, AMOUNT_MISMATCH, or VERIFICATION_UNAVAILABLE for non-mock operations
           content:
             application/json:
               schema:
@@ -644,7 +663,7 @@ paths:
     post:
       tags:
       - merchant
-      summary: Create an invoice; backend derives a fresh merchant receiving address
+      summary: Create a merchant invoice with an explicitly non-spendable mock receiver
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -660,13 +679,17 @@ paths:
               properties:
                 reference:
                   type: string
+                  minLength: 1
                   maxLength: 64
                   example: INV-1001
                 amountZat:
-                  $ref: '#/components/schemas/Zatoshi'
+                  allOf:
+                  - $ref: '#/components/schemas/Zatoshi'
+                  description: Canonical integer string in zatoshis, from 1 through 2100000000000000.
                 expiresAt:
                   type: string
                   format: date-time
+                  description: Must be in the future. Defaults to 24 hours after creation.
       responses:
         '201':
           description: created
@@ -674,6 +697,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Invoice'
+        '400':
+          description: Invalid reference, amount, expiry, or idempotency key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
@@ -707,6 +736,32 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+      x-role: merchant
+      security:
+      - session: []
+  /merchant/invoices/{id}:
+    get:
+      tags: [merchant]
+      summary: Read an owned invoice and refresh its expiry status
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Invoice; open invoices past expiry become expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Invoice missing or owned by another merchant
       x-role: merchant
       security:
       - session: []
@@ -808,10 +863,12 @@ components:
           - ready
           - syncing
           - unavailable
+          - broadcast_disabled
         walletBackend:
           type: string
           enum:
           - zingolib
+          - zingo
           - zallet
           - mock
         chainHeight:
@@ -826,7 +883,8 @@ components:
           enum:
           - real
           - mock
-          description: Required. mock = UI shows a persistent MOCK banner; no on-chain txids exist.
+          - disabled
+          description: mock is simulation; disabled means the built-in Zingo adapter cannot broadcast or establish chain readiness.
         reconciler:
           type: object
           properties:
@@ -1173,6 +1231,7 @@ components:
               - BROADCAST_REJECTED
               - EXPIRED_UNMINED
               - OUTCOME_UNKNOWN
+              - WALLET_BROADCAST_DISABLED
             message:
               type: string
             retriable:
@@ -1254,8 +1313,24 @@ components:
           $ref: '#/components/schemas/Zatoshi'
         payTo:
           type: string
-          description: Fresh merchant shielded receiving address for this invoice. Returned to the paying agent
-            flow only, never in URLs.
+          description: Unique mock-only receiver in the current backend; not a Zcash address.
+        paymentPayload:
+          type: object
+          description: QR-ready mock payload. Never pass to a Zcash wallet. Legacy invoices may omit this field.
+          required: [format, uri, mock, spendable]
+          properties:
+            format:
+              type: string
+              const: veilpay-mock-v1
+            uri:
+              type: string
+              description: 'veilpay-mock:{invoiceId}?amountZat={exact integer amount}'
+            mock:
+              type: boolean
+              const: true
+            spendable:
+              type: boolean
+              const: false
         status:
           type: string
           enum:

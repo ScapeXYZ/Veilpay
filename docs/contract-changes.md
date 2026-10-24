@@ -1,6 +1,6 @@
 # Contract notes against OpenAPI v1.1
 
-Flagged for review. Nothing here is implemented as a contract change; `contracts/openapi.yaml` on main remains authoritative and the frontend contract-sync suite reads it directly.
+Flagged for review. The frontend does not change the backend API. `contracts/openapi.yaml` is synchronized to `feat/veilpay-backend-integration` at `e078d469ff4b8a62fae48dfbef958ab83d585438`; contract-sync tests read that file directly. The original `contract/openapi.v1.1.yaml` is historical, not byte-identical to the current spec.
 
 ## 1. Merchant has no list of incoming payments
 

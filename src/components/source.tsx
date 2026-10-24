@@ -23,6 +23,11 @@ export function MockBanner() {
       </div>
     );
   }
+  if (source === "disabled") return (
+    <div data-testid="disabled-banner" className="sticky top-0 z-50 bg-amber-900 px-4 py-1.5 text-center text-xs font-semibold text-white">
+      Broadcasting disabled. This backend cannot send funds or independently verify merchant receipts.
+    </div>
+  );
   if (source === "unknown" || isError) {
     return (
       <div data-testid="unknown-banner" className="sticky top-0 z-50 bg-zinc-700 px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-wider text-white">
@@ -47,6 +52,7 @@ export function SourceTag({ source: forced, className }: { source?: DataSource; 
         <FlaskConical size={11} aria-hidden /> MOCK
       </Badge>
     );
+  if (source === "disabled") return <Badge tone="warning" className={className} testId="source-disabled">BROADCAST DISABLED</Badge>;
   if (source === "real")
     return (
       <Badge tone="success" className={className} testId="source-real">

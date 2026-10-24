@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedPayments } from "@/lib/api/fixtures";
-import type { Payment, Verification } from "@/lib/contract/schemas";
+import type { Health, Payment, Verification } from "@/lib/contract/schemas";
 import { ackEligibility, dataSourceOf, paymentBadge, timelineTitle, unresolvedOf } from "./present";
 
 const byId = (id: string) => seedPayments().find((p) => p.id === id)!;
@@ -69,6 +69,12 @@ describe("merchant acknowledgment gate", () => {
 });
 
 describe("real-vs-mock indicator", () => {
+  it("never labels the disabled adapter or mainnet as real testnet", () => {
+    const health: Health = { status: "degraded", network: "testnet", wallet: "broadcast_disabled", walletBackend: "zingo", chainHeight: null, confirmationsRequired: 1, mode: "disabled", reconciler: { lastRunAt: null, unresolved: 0 }, chainWatcher: { lastBlockAt: null, watchDepth: 10, deepReorgAlert: false } };
+    expect(dataSourceOf(health, "live")).toBe("disabled");
+    expect(dataSourceOf({ ...health, mode: "real" }, "live")).toBe("disabled");
+    expect(dataSourceOf({ ...health, wallet: "ready", mode: "real", network: "mainnet" }, "live")).toBe("unknown");
+  });
   it("mock client is always mock; live client trusts the backend mode", () => {
     expect(dataSourceOf(undefined, "mock")).toBe("mock");
     expect(dataSourceOf(undefined, "live")).toBe("unknown");

@@ -111,6 +111,22 @@ describe("policy at execute + pause", () => {
   });
 });
 
+describe("invoice lookup", () => {
+  it("is merchant-only and returns a nonspendable payload", async () => {
+    expect(await code(api.getInvoice("inv_missing01"))).toBe("WRONG_CONTEXT");
+    await api.createDemoSession("merchant");
+    const created = await api.createInvoice({ reference: "lookup", amountZat: "1" }, "idem_lookup01");
+    const detail = await api.getInvoice(created.id);
+    expect(detail.paymentPayload).toMatchObject({ format: "veilpay-mock-v1", mock: true, spendable: false });
+    expect(await code(api.getInvoice("inv_missing01"))).toBe("NOT_FOUND");
+  });
+  it("refreshes expired status without fabricating a payment", async () => {
+    await api.createDemoSession("merchant");
+    const created = await api.createInvoice({ reference: "expiry", amountZat: "1", expiresAt: "2000-01-01T00:00:00Z" }, "idem_expire01");
+    expect((await api.getInvoice(created.id)).status).toBe("expired");
+  });
+});
+
 describe("context isolation", () => {
   it("merchant cannot read customer payments; customer cannot read verification", async () => {
     expect(await code(api.getVerification("pay_confirmed0001"))).toBe("WRONG_CONTEXT");
