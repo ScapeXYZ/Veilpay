@@ -121,35 +121,35 @@ export function paymentBadge(p: Payment): { label: string; tone: Tone } {
   return STATUS_COPY[p.status];
 }
 
-export function timelineTitle(e: TimelineEvent): string {
+export function timelineTitle(e: TimelineEvent, simulated = false): string {
   switch (e.kind) {
     case "reorg":
-      return `Reorg: back to ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Reorg: back to ${statusLabel(e.status, simulated).toLowerCase()}`;
     case "reconciled":
-      return `Reconciled: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Reconciled: ${statusLabel(e.status, simulated).toLowerCase()}`;
     case "policy_changed":
-      return `Policy changed: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Policy changed: ${statusLabel(e.status, simulated).toLowerCase()}`;
     case "agent_paused":
-      return `Agent paused: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Agent paused: ${statusLabel(e.status, simulated).toLowerCase()}`;
     case "late_receipt":
-      return `${STATUS_COPY[e.status].label} (late receipt)`;
+      return `${statusLabel(e.status, simulated)} (late receipt)`;
     case "verification":
-      return `Merchant verification: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Merchant verification: ${statusLabel(e.status, simulated).toLowerCase()}`;
     case "wallet":
-      return `Wallet event: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+      return `Wallet event: ${statusLabel(e.status, simulated).toLowerCase()}`;
     default:
-      return STATUS_COPY[e.status].label;
+      return statusLabel(e.status, simulated);
   }
 }
 
 export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone: Tone; help: string }> = {
   not_seen: { label: "Not seen", tone: "neutral", help: "No receipt for this invoice has been seen yet." },
   pending: { label: "Pending", tone: "progress", help: "A receipt is visible but not at the required confirmations." },
-  received: { label: "Received", tone: "success", help: "The expected amount arrived with the required confirmations." },
-  late: { label: "Received late", tone: "warning", help: "A receipt arrived after the invoice expired." },
+  received: { label: "Received", tone: "success", help: "VeilPay's receipt scan reports the invoice amount at the required confirmations." },
+  late: { label: "Received late", tone: "warning", help: "A receipt was reported after the invoice expired." },
   amount_mismatch: { label: "Amount mismatch", tone: "danger", help: "The received amount does not equal the invoice amount." },
   expired: { label: "Invoice expired", tone: "neutral", help: "The invoice expired with no receipt." },
-  underpaid: { label: "Underpaid", tone: "danger", help: "Less than the invoice amount arrived. Cannot be acknowledged." },
+  underpaid: { label: "Underpaid", tone: "danger", help: "Less than the invoice amount was reported. Cannot be acknowledged." },
   duplicate: { label: "Duplicate receipt", tone: "danger", help: "More than one matching receipt was seen. Cannot be acknowledged until resolved." },
   conflicting: { label: "Conflicting receipts", tone: "danger", help: "The merchant wallet saw observations that disagree. Cannot be acknowledged until resolved." },
   reorged: { label: "Reorged", tone: "warning", help: "The receipt dropped out of the best chain. Not received until it is observed again at depth." },
@@ -161,19 +161,99 @@ export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone:
  * Never on amount_mismatch. The backend enforces it again (409); this only decides whether to offer the button.
  */
 export function ackEligibility(v: Verification): { allowed: boolean; reason: string } {
+  const sim = isSimulatedVerification(v);
+  const conf = sim ? "simulated confirmations" : "confirmations";
   // The backend's own current-observation verdict can only narrow eligibility, never widen it.
   if (v.acknowledgmentEligible === false && (v.state === "received" || v.state === "late"))
     return { allowed: false, reason: "VeilPay cannot confirm this receipt yet, so it cannot be marked as received." };
-  if (v.state === "received") return { allowed: true, reason: "The right amount arrived and is confirmed." };
+  if (v.state === "received")
+    return { allowed: true, reason: sim ? "The simulated payment matches the invoice." : "VeilPay's scan reports the invoice amount at the required confirmations." };
   if (v.state === "amount_mismatch") return { allowed: false, reason: "The amount does not match the invoice, so it cannot be marked as received." };
   if (v.state === "late") {
     if (v.confirmations < v.confirmationsRequired)
-      return { allowed: false, reason: `Paid late, ${v.confirmations} of ${v.confirmationsRequired} confirmations so far. Wait for the rest.` };
+      return { allowed: false, reason: `Paid late, ${v.confirmations} of ${v.confirmationsRequired} ${conf} so far. Wait for the rest.` };
     if (!v.receivedZat || !v.expectedZat || v.receivedZat !== v.expectedZat)
       return { allowed: false, reason: "Paid late, and the amount does not match the invoice." };
-    return { allowed: true, reason: "Paid late, but the exact amount arrived and is confirmed." };
+    return { allowed: true, reason: sim ? "Paid late, but the simulated payment matches the invoice amount." : "Paid late, but VeilPay's scan reports the exact amount at the required confirmations." };
   }
-  return { allowed: false, reason: "The payment has not been confirmed yet." };
+  return { allowed: false, reason: sim ? "The simulated payment has not reached the required simulated confirmations yet." : "The payment has not been confirmed yet." };
+}
+
+/* ---------- Simulation-aware presentation (one place, so badges, details, timeline, activity and receipts agree) ---------- */
+
+/** A receipt check is simulated when the backend marks it mock or used the mock method. */
+export function isSimulatedVerification(v: Pick<Verification, "mock" | "method">): boolean {
+  return v.mock === true || v.method === "mock";
+}
+
+/** A payment is simulated when the app is in a mock mode, or the backend gave it a practice reference. */
+export function isSimulatedPayment(p: Pick<Payment, "mockRef">, modeIsMock: boolean): boolean {
+  return modeIsMock || !!p.mockRef;
+}
+
+const SIMULATED_VERIFICATION: Partial<Record<VerificationState, { label: string; help: string }>> = {
+  received: { label: "Simulated match", help: "The simulated payment matches the invoice. Practice data only: no funds arrived and no chain was checked." },
+  pending: { label: "Simulated, pending", help: "A simulated receipt is visible but not at the required simulated confirmations." },
+  late: { label: "Simulated, late", help: "A simulated receipt was recorded after the invoice expired." },
+};
+
+/** Receipt copy for the merchant card; simulated receipts never read as funds arriving. */
+export function verificationCopy(v: Pick<Verification, "state" | "mock" | "method">): { label: string; tone: Tone; help: string } {
+  const base = VERIFICATION_COPY[v.state];
+  if (!isSimulatedVerification(v)) return base;
+  const sim = SIMULATED_VERIFICATION[v.state];
+  return sim ? { ...base, ...sim } : { ...base, help: `${base.help} Simulated data, nothing real moved.` };
+}
+
+/** The merchant's "marked as received" statement. Never implies settlement or independent chain verification. */
+export function ackStatement(simulated: boolean): string {
+  return simulated
+    ? "Simulated: a practice statement by the merchant, not proof that any funds arrived."
+    : "This is the merchant's own statement, not settlement proof or an independent chain check.";
+}
+
+/** Sent-side status labels in a simulation. */
+export const SIMULATED_STATUS_LABEL: Partial<Record<PaymentStatus, string>> = {
+  submitted: "Simulated send",
+  confirming: "Simulated, awaiting simulated confirmations",
+  confirmed: "Simulated complete",
+};
+
+/** Status label for badges, details and activity rows. Unresolved states keep their own wording. */
+export function paymentStatusLabel(p: Payment, simulated: boolean): { label: string; tone: Tone } {
+  const b = paymentBadge(p);
+  if (!simulated || unresolvedOf(p)) return b;
+  return { label: SIMULATED_STATUS_LABEL[p.status] ?? b.label, tone: b.tone };
+}
+
+/** Status label for one timeline event. */
+export function statusLabel(status: PaymentStatus, simulated: boolean): string {
+  return (simulated && SIMULATED_STATUS_LABEL[status]) || STATUS_COPY[status].label;
+}
+
+/** "2 of 3 simulated confirmations" / "2 of 3". */
+export function confirmationsText(n: number | null | undefined, required: number | null | undefined, simulated: boolean): string {
+  const c = n ?? 0;
+  const base = required != null ? `${c} of ${required}` : `${c}`;
+  return simulated ? `${base} simulated confirmation${(required ?? c) === 1 ? "" : "s"}` : base;
+}
+
+const SENT_STATUSES: PaymentStatus[] = ["submitted", "confirming", "confirmed"];
+
+/** True once anything (real or mock) was sent, judged from the status, the timeline or a reference. */
+export function wasSent(p: Payment): boolean {
+  return SENT_STATUSES.includes(p.status) || !!p.mockRef || !!p.txid || p.timeline.some((e) => SENT_STATUSES.includes(e.status));
+}
+
+/** Privacy row on payment details. A simulated run is mock execution, never real shielded settlement. */
+export function privacyLine(p: Payment, simulated: boolean): string {
+  const sent = wasSent(p);
+  if (simulated) {
+    if (!sent) return "Not sent yet. Nothing has been simulated for this payment.";
+    return `Mock execution only${p.pool ? ` (simulated ${p.pool} pool)` : ""}. No real shielded settlement happened.`;
+  }
+  if (!sent) return "Not sent yet";
+  return p.pool ? `${p.pool} pool, as reported by VeilPay` : "Not reported by the server";
 }
 
 export type DataSource = "mock" | "real" | "disabled" | "unknown";

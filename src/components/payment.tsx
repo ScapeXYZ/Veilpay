@@ -13,24 +13,28 @@ import {
   VIOLATION_COPY,
   WALLET_OP_COPY,
   fmtTime,
-  paymentBadge,
   shortId,
   timelineTitle,
   unresolvedOf,
+  isSimulatedPayment,
+  paymentStatusLabel,
+  privacyLine,
+  confirmationsText,
   awaitingOperatorConfirmation,
   WALLET_PHASE_COPY,
 } from "@/lib/present";
+import Link from "next/link";
+import { CopyButton } from "./copy-button";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
 import { SourceTag, WriteBlocked } from "./source";
 import { Badge, Button, Card, ErrorBox, Notice, StatusBadge, Zec } from "./ui";
 
 export function PaymentBadge({ p }: { p: Payment }) {
   const mode = useNetworkMode();
-  const b = paymentBadge(p);
-  const label = mode.kind === "mock" && p.status === "confirmed" ? "Simulated complete" : b.label;
+  const b = paymentStatusLabel(p, isSimulatedPayment(p, mode.kind === "mock"));
   return (
     <StatusBadge tone={b.tone} testId={`badge-${p.id}`}>
-      {label}
+      {b.label}
     </StatusBadge>
   );
 }
@@ -81,6 +85,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
 }
 
 export function Timeline({ p }: { p: Payment }) {
+  const simulated = isSimulatedPayment(p, useNetworkMode().kind === "mock");
   return (
     <ol data-testid="timeline" className="relative ml-2 border-l border-zinc-800">
       {p.timeline.map((e, i) => {
@@ -97,7 +102,7 @@ export function Timeline({ p }: { p: Payment }) {
               aria-hidden
             />
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className={clsx("font-medium", last ? "text-zinc-50" : "text-zinc-300")}>{timelineTitle(e)}</span>
+              <span className={clsx("font-medium", last ? "text-zinc-50" : "text-zinc-300")}>{timelineTitle(e, simulated)}</span>
               {back && <Badge tone="warning">backward move</Badge>}
               <span className="text-xs text-zinc-500">{fmtTime(e.at)}</span>
             </div>
@@ -168,7 +173,7 @@ function ExecuteBlock({ p }: { p: Payment }) {
 
 export function PaymentDetail({ p }: { p: Payment }) {
   const op = p.walletOperation;
-  const simulated = useNetworkMode().kind === "mock";
+  const simulated = isSimulatedPayment(p, useNetworkMode().kind === "mock");
   const sentAlready = ["submitted", "confirming", "confirmed"].includes(p.status);
   return (
     <div className="flex flex-col gap-4" data-testid="payment-detail">
@@ -201,13 +206,24 @@ export function PaymentDetail({ p }: { p: Payment }) {
         <div className="flex flex-col gap-4">
           <DecisionPanel d={p.decision} />
           <Card title="Payment details" className="!bg-zinc-950/40" testId="send-record">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-zinc-500">Payment ID</dt>
+              <dd className="min-w-0" data-testid="payment-id">
+                <span className="flex flex-wrap items-center gap-2">
+                  <code className="font-mono text-xs text-zinc-100 [overflow-wrap:anywhere]" data-testid="payment-id-value">{p.id}</code>
+                  <CopyButton value={p.id} label="Copy" testId="copy-payment-id" />
+                </span>
+                <span className="mt-1 block text-xs text-zinc-500" data-testid="payment-id-help">
+                  To check this payment as the merchant, copy the ID and paste it on the{" "}
+                  <Link href="/app/merchant" className="text-accent-300 underline-offset-2 hover:underline">Merchant page</Link>.
+                </span>
+              </dd>
               <dt className="text-zinc-500">Status</dt>
-              <dd>{paymentBadge(p).label}</dd>
+              <dd data-testid="detail-status">{paymentStatusLabel(p, simulated).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
-              <dd className="tabular-nums">{p.confirmations ?? 0}{simulated && <span className="text-xs text-zinc-500"> (simulated)</span>}</dd>
+              <dd className="tabular-nums" data-testid="detail-confirmations">{confirmationsText(p.confirmations, null, simulated)}</dd>
               <dt className="text-zinc-500">Privacy</dt>
-              <dd>{!p.pool ? (sentAlready ? "Not reported by the server" : "Not sent yet") : simulated ? `Simulated ${p.pool} pool send, nothing real moved` : `${p.pool} pool, as reported by VeilPay`}</dd>
+              <dd data-testid="detail-privacy">{privacyLine(p, simulated)}</dd>
               <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
               <dd className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]" data-testid="tx-ref">
                 {p.mockRef ? (
