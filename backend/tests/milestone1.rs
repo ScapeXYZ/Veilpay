@@ -1145,3 +1145,547 @@ async fn concurrent_invoice_retries_create_one_invoice() {
         .unwrap();
     assert_eq!(count, 1);
 }
+
+// Milestone 2: every adapter below is an in-memory fake; no wallet commands run.
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
+use veilpay_backend::wallet::{
+    Network, SendIntent, WalletAdapter, WalletFuture, WalletOutcome, ZingoWallet,
+};
+
+struct FakeWallet {
+    network: Option<Network>,
+    submits: AtomicUsize,
+    observations: AtomicUsize,
+    outcome: Mutex<WalletOutcome>,
+    block: bool,
+    entered: tokio::sync::Notify,
+}
+impl FakeWallet {
+    fn new(outcome: WalletOutcome) -> Self {
+        Self {
+            network: None,
+            submits: AtomicUsize::new(0),
+            observations: AtomicUsize::new(0),
+            outcome: Mutex::new(outcome),
+            block: false,
+            entered: tokio::sync::Notify::new(),
+        }
+    }
+}
+impl WalletAdapter for FakeWallet {
+    fn network(&self) -> Network {
+        self.network.unwrap_or(Network::Testnet)
+    }
+    fn submit<'a>(&'a self, _: &'a SendIntent) -> WalletFuture<'a> {
+        Box::pin(async move {
+            self.submits.fetch_add(1, Ordering::SeqCst);
+            self.entered.notify_one();
+            if self.block {
+                std::future::pending::<()>().await;
+            }
+            self.outcome.lock().unwrap().clone()
+        })
+    }
+    fn observe<'a>(&'a self, _: &'a SendIntent) -> WalletFuture<'a> {
+        Box::pin(async move {
+            self.observations.fetch_add(1, Ordering::SeqCst);
+            self.outcome.lock().unwrap().clone()
+        })
+    }
+}
+
+async fn adapter_fixture(adapter: Arc<dyn WalletAdapter>) -> (Fixture, String, std::path::PathBuf) {
+    let path = std::env::temp_dir().join(format!("veilpay-execution-{}.db", uuid::Uuid::new_v4()));
+    let url = format!("sqlite://{}", path.display());
+    let mut f = Fixture::at(&url).await;
+    f.app.pool.close().await;
+    f.app = App::open_with_wallet(
+        Config {
+            database_url: url.clone(),
+            frontend_origin: ORIGIN.into(),
+            network: "testnet".into(),
+        },
+        Some(adapter),
+    )
+    .await
+    .unwrap();
+    f.router = f.app.clone().router();
+    (f, url, path)
+}
+async fn executable_payment(f: &Fixture) -> (Value, Value) {
+    let (a, p) = f.payment().await;
+    // Synthetic fixture receiver, never a real address or wallet.
+    sqlx::query("UPDATE records SET body=json_set(body,'$.payTo','fixture-only-receiver') WHERE kind='invoice'").execute(&f.app.pool).await.unwrap();
+    (a, p)
+}
+async fn current_payment(f: &Fixture, p: &Value) -> Value {
+    call(
+        &f.router,
+        "GET",
+        &format!("payments/{}", p["id"].as_str().unwrap()),
+        Some(&f.customer),
+        None,
+        json!({}),
+    )
+    .await
+    .body
+}
+async fn cleanup_fixture(f: Fixture, path: std::path::PathBuf) {
+    f.app.pool.close().await;
+    std::fs::remove_file(path).unwrap();
+}
+
+#[tokio::test]
+async fn disabled_adapter_releases_once_and_does_not_fake_verification() {
+    let (f, _, path) = adapter_fixture(Arc::new(ZingoWallet::new(Network::Testnet))).await;
+    let (a, p) = f.payment().await;
+    let first = f.execute(&p, "disabled-execute").await;
+    assert_eq!(first.status, 202);
+    assert_eq!(first.body["walletOperation"]["state"], "pending");
+    let saved = current_payment(&f, &p).await;
+    assert_eq!(saved["status"], "failed");
+    assert_eq!(saved["walletOperation"]["state"], "failed_definitive");
+    assert_eq!(saved["failure"]["code"], "WALLET_BROADCAST_DISABLED");
+    assert!(saved["txid"].is_null());
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    assert_eq!(f.usage(&a).await["spentZat"], "0");
+    assert_eq!(f.execute(&p, "disabled-execute").await.raw, first.raw);
+    f.app.reconcile_wallet_operations().await.unwrap();
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    let verification = call(
+        &f.router,
+        "GET",
+        &format!("payments/{}/verification", p["id"].as_str().unwrap()),
+        Some(&f.merchant),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(verification.status, 409);
+    assert_eq!(verification.body["code"], "VERIFICATION_UNAVAILABLE");
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn unknown_holds_reservation_across_concurrent_retries_and_restart() {
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Unknown));
+    let (mut f, url, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    let (first, replay) = tokio::join!(
+        f.execute(&p, "durable-execute"),
+        f.execute(&p, "durable-execute")
+    );
+    assert_eq!(first.raw, replay.raw);
+    assert_ne!(first.replay, replay.replay);
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    assert_eq!(
+        current_payment(&f, &p).await["failure"]["code"],
+        "OUTCOME_UNKNOWN"
+    );
+    sqlx::query("UPDATE wallet_operations SET created_at='2000-01-01T00:00:00Z'")
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    f.app.pool.close().await;
+    f.app = App::open_with_wallet(
+        Config {
+            database_url: url,
+            frontend_origin: ORIGIN.into(),
+            network: "testnet".into(),
+        },
+        Some(adapter.clone()),
+    )
+    .await
+    .unwrap();
+    f.router = f.app.clone().router();
+    assert_eq!(
+        current_payment(&f, &p).await["walletOperation"]["needsOperator"],
+        true
+    );
+    assert_eq!(f.execute(&p, "durable-execute").await.raw, first.raw);
+    f.execute(&p, "another-execute").await;
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn reconciliation_requires_matching_txid_and_spends_reservation_once() {
+    let txid = "a".repeat(64);
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Broadcast {
+        txid: txid.clone(),
+    }));
+    let (f, _, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    f.execute(&p, "broadcast-fixture").await;
+    assert_eq!(
+        current_payment(&f, &p).await["walletOperation"]["state"],
+        "broadcast"
+    );
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    *adapter.outcome.lock().unwrap() = WalletOutcome::Mined {
+        txid: "b".repeat(64),
+        confirmations: 4,
+    };
+    f.app.reconcile_wallet_operations().await.unwrap();
+    assert_eq!(
+        current_payment(&f, &p).await["walletOperation"]["state"],
+        "unknown"
+    );
+    assert_eq!(f.usage(&a).await["spentZat"], "0");
+    *adapter.outcome.lock().unwrap() = WalletOutcome::Mined {
+        txid: txid.clone(),
+        confirmations: 0,
+    };
+    f.app.reconcile_wallet_operations().await.unwrap();
+    assert_eq!(f.usage(&a).await["spentZat"], "0");
+    *adapter.outcome.lock().unwrap() = WalletOutcome::Mined {
+        txid,
+        confirmations: 1,
+    };
+    let (x, y) = tokio::join!(
+        f.app.reconcile_wallet_operations(),
+        f.app.reconcile_wallet_operations()
+    );
+    x.unwrap();
+    y.unwrap();
+    assert_eq!(f.usage(&a).await["spentZat"], "60");
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    assert_eq!(current_payment(&f, &p).await["status"], "confirmed");
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn cancellation_after_claim_recovers_without_resubmission() {
+    let adapter = Arc::new(FakeWallet {
+        block: true,
+        ..FakeWallet::new(WalletOutcome::Unknown)
+    });
+    let (mut f, url, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    let router = f.router.clone();
+    let session = f.customer.clone();
+    let payment = p.clone();
+    let task = tokio::spawn(async move {
+        call(
+            &router,
+            "POST",
+            &format!("payments/{}/execute", payment["id"].as_str().unwrap()),
+            Some(&session),
+            Some("cancelled-execute"),
+            json!({}),
+        )
+        .await
+    });
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        adapter.entered.notified(),
+    )
+    .await
+    .unwrap();
+    // A separate connection can read the claim while the adapter is blocked.
+    let state: String = sqlx::query_scalar("SELECT state FROM wallet_operations")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(state, "unknown");
+    task.abort();
+    let _ = task.await;
+    f.app.pool.close().await;
+    f.app = App::open_with_wallet(
+        Config {
+            database_url: url,
+            frontend_origin: ORIGIN.into(),
+            network: "testnet".into(),
+        },
+        Some(adapter.clone()),
+    )
+    .await
+    .unwrap();
+    f.router = f.app.clone().router();
+    assert!(f.execute(&p, "cancelled-execute").await.replay);
+    f.execute(&p, "cancelled-another").await;
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn wallet_and_database_networks_are_enforced_without_opening_wallets() {
+    assert_ne!(
+        ZingoWallet::new(Network::Testnet).network(),
+        ZingoWallet::new(Network::Mainnet).network()
+    );
+    for network in [Network::Testnet, Network::Mainnet] {
+        let wallet = ZingoWallet::new(network);
+        let intent = SendIntent {
+            operation_id: "op".into(),
+            payment_id: "pay".into(),
+            network,
+            destination: "fixture".into(),
+            amount_zat: 1,
+        };
+        assert_eq!(
+            wallet.submit(&intent).await,
+            WalletOutcome::BroadcastDisabled
+        );
+        assert_eq!(wallet.observe(&intent).await, WalletOutcome::Unknown);
+    }
+    let config = || Config {
+        database_url: "sqlite::memory:".into(),
+        frontend_origin: ORIGIN.into(),
+        network: "mainnet".into(),
+    };
+    assert!(
+        App::open_with_wallet(config(), Some(Arc::new(ZingoWallet::new(Network::Testnet))))
+            .await
+            .is_err()
+    );
+    assert!(App::open_with_wallet(config(), None).await.is_err());
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Unknown));
+    let (f, url, path) = adapter_fixture(adapter).await;
+    assert!(
+        App::open_with_wallet(
+            Config {
+                database_url: url,
+                frontend_origin: ORIGIN.into(),
+                network: "mainnet".into()
+            },
+            Some(Arc::new(ZingoWallet::new(Network::Mainnet)))
+        )
+        .await
+        .is_err()
+    );
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn mainnet_gate_blocks_even_an_injected_adapter() {
+    let adapter = Arc::new(FakeWallet {
+        network: Some(Network::Mainnet),
+        ..FakeWallet::new(WalletOutcome::Unknown)
+    });
+    let app = App::open_with_wallet(
+        Config {
+            database_url: "sqlite::memory:".into(),
+            frontend_origin: ORIGIN.into(),
+            network: "mainnet".into(),
+        },
+        Some(adapter.clone()),
+    )
+    .await
+    .unwrap();
+    // Test-only authenticated sessions; mainnet has no public demo login.
+    for role in ["customer", "merchant"] {
+        sqlx::query("INSERT INTO sessions VALUES(?,?,?,?)")
+            .bind(role)
+            .bind(role)
+            .bind(role)
+            .bind("2099-01-01T00:00:00Z")
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
+    let f = Fixture {
+        router: app.clone().router(),
+        app,
+        customer: Session {
+            cookie: "__Host-veilpay_session=customer".into(),
+            csrf: "customer".into(),
+        },
+        merchant: Session {
+            cookie: "__Host-veilpay_session=merchant".into(),
+            csrf: "merchant".into(),
+        },
+    };
+    let (a, p) = executable_payment(&f).await;
+    f.execute(&p, "mainnet-execute").await;
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        current_payment(&f, &p).await["failure"]["code"],
+        "WALLET_BROADCAST_DISABLED"
+    );
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    let health = call(&f.router, "GET", "health", None, None, json!({})).await;
+    assert_eq!(health.body["mode"], "disabled");
+    assert_eq!(health.body["wallet"], "broadcast_disabled");
+}
+
+#[tokio::test]
+async fn distinct_payments_cannot_execute_the_same_unresolved_invoice() {
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Unknown));
+    let (f, _, path) = adapter_fixture(adapter.clone()).await;
+    let a = f.agent("100", "200").await;
+    let i = f.invoice("60").await;
+    let p = f.request(&a, &i, "60", "invoice-request-one").await.body;
+    let q = f.request(&a, &i, "60", "invoice-request-two").await.body;
+    sqlx::query("UPDATE records SET body=json_set(body,'$.payTo','fixture-only-receiver') WHERE kind='invoice'").execute(&f.app.pool).await.unwrap();
+    assert_eq!(f.usage(&a).await["reservedZat"], "120");
+    let (x, y) = tokio::join!(
+        f.execute(&p, "invoice-execute-one"),
+        f.execute(&q, "invoice-execute-two")
+    );
+    assert!((x.status == 202 && y.status == 409) || (x.status == 409 && y.status == 202));
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    assert_eq!(f.usage(&a).await["spentZat"], "0");
+    let health = call(&f.router, "GET", "health", None, None, json!({})).await;
+    assert_eq!(health.body["reconciler"]["unresolved"], 1);
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn startup_pending_operations_are_observed_and_never_dispatched() {
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Unknown));
+    let (mut f, url, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    f.execute(&p, "pending-execute").await;
+    // Model the durable intent checkpoint before the dispatch claim.
+    sqlx::query("UPDATE wallet_operations SET state='pending'")
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE records SET body=json_set(body,'$.walletOperation.state','pending') WHERE kind='payment'").execute(&f.app.pool).await.unwrap();
+    adapter.submits.store(0, Ordering::SeqCst);
+    f.app.pool.close().await;
+    f.app = App::open_with_wallet(
+        Config {
+            database_url: url,
+            frontend_origin: ORIGIN.into(),
+            network: "testnet".into(),
+        },
+        Some(adapter.clone()),
+    )
+    .await
+    .unwrap();
+    f.router = f.app.clone().router();
+    assert_eq!(
+        current_payment(&f, &p).await["walletOperation"]["state"],
+        "unknown"
+    );
+    f.execute(&p, "pending-new-key").await;
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 0);
+    assert!(adapter.observations.load(Ordering::SeqCst) > 0);
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn wallet_schema_upgrade_preserves_existing_mock_operations() {
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    sqlx::raw_sql(include_str!("../migrations/0001_initial.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO wallet_operations VALUES('op','pay',1,'mock','final','mockref',NULL,'2026-01-01','2026-01-01')").execute(&pool).await.unwrap();
+    sqlx::raw_sql(include_str!("../migrations/0003_wallet_lifecycle.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let row: (String, String, Option<String>) =
+        sqlx::query_as("SELECT state,network,txid FROM wallet_operations WHERE id='op'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(row, ("final".into(), "legacy_mock".into(), None));
+    assert!(
+        sqlx::query("UPDATE wallet_operations SET attempt=2 WHERE id='op'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("UPDATE wallet_operations SET txid='fake' WHERE id='op'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn adapter_deadline_is_unknown_and_holds_the_reservation() {
+    let adapter = Arc::new(FakeWallet {
+        block: true,
+        ..FakeWallet::new(WalletOutcome::Unknown)
+    });
+    let (f, _, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    let router = f.router.clone();
+    let session = f.customer.clone();
+    let payment = p.clone();
+    let task = tokio::spawn(async move {
+        call(
+            &router,
+            "POST",
+            &format!("payments/{}/execute", payment["id"].as_str().unwrap()),
+            Some(&session),
+            Some("timeout-execute"),
+            json!({}),
+        )
+        .await
+    });
+    adapter.entered.notified().await;
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(31)).await;
+    tokio::time::resume();
+    assert_eq!(task.await.unwrap().status, 202);
+    assert_eq!(
+        current_payment(&f, &p).await["failure"]["code"],
+        "OUTCOME_UNKNOWN"
+    );
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    f.execute(&p, "timeout-new-key").await;
+    assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+    cleanup_fixture(f, path).await;
+}
+
+#[tokio::test]
+async fn only_submission_can_release_a_definitive_pre_creation_rejection() {
+    use veilpay_backend::wallet::PreCreationRejection;
+    let adapter = Arc::new(FakeWallet::new(WalletOutcome::Unknown));
+    let (f, _, path) = adapter_fixture(adapter.clone()).await;
+    let (a, p) = executable_payment(&f).await;
+    f.execute(&p, "uncertain-then-rejected").await;
+    *adapter.outcome.lock().unwrap() =
+        WalletOutcome::RejectedBeforeCreation(PreCreationRejection::InsufficientFunds);
+    f.app.reconcile_wallet_operations().await.unwrap();
+    assert_eq!(f.usage(&a).await["reservedZat"], "60");
+    assert_eq!(
+        current_payment(&f, &p).await["failure"]["code"],
+        "OUTCOME_UNKNOWN"
+    );
+    cleanup_fixture(f, path).await;
+    for reason in [
+        PreCreationRejection::InsufficientFunds,
+        PreCreationRejection::InvalidDestination,
+    ] {
+        let adapter = Arc::new(FakeWallet::new(WalletOutcome::RejectedBeforeCreation(
+            reason,
+        )));
+        let (f, _, path) = adapter_fixture(adapter.clone()).await;
+        let (a, p) = executable_payment(&f).await;
+        f.execute(&p, "definitive-execute").await;
+        assert_eq!(
+            current_payment(&f, &p).await["walletOperation"]["state"],
+            "failed_definitive"
+        );
+        assert_eq!(
+            current_payment(&f, &p).await["failure"]["code"],
+            "REJECTED_BY_WALLET_PRE_BROADCAST"
+        );
+        assert_eq!(f.usage(&a).await["reservedZat"], "0");
+        f.execute(&p, "definitive-execute-again").await;
+        assert_eq!(adapter.submits.load(Ordering::SeqCst), 1);
+        cleanup_fixture(f, path).await;
+    }
+}

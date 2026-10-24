@@ -3,8 +3,18 @@ use veilpay_backend::{App, Config};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = App::open(Config::from_env()?).await?;
+    let reconciler = app.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            if reconciler.reconcile_wallet_operations().await.is_err() {
+                eprintln!("Wallet reconciliation failed");
+            }
+        }
+    });
     let listener = tokio::net::TcpListener::bind("0.0.0.0:4000").await?;
-    println!("VeilPay mock backend listening on :4000; no blockchain transactions");
+    println!("VeilPay backend listening on :4000; live broadcasting disabled");
     axum::serve(
         listener,
         app.router()

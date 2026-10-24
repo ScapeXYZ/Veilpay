@@ -1,3 +1,5 @@
+mod execution;
+pub mod wallet;
 use axum::{
     Router,
     body::Bytes,
@@ -14,8 +16,10 @@ use sqlx::{
     Row, SqliteConnection, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
+use std::sync::Arc;
 use std::{net::SocketAddr, str::FromStr, time::Duration as StdDuration};
 use tower_http::cors::CorsLayer;
+use wallet::{Network, SendIntent, WalletAdapter, WalletOutcome, ZingoWallet};
 
 #[derive(Clone)]
 pub struct Config {
@@ -44,6 +48,7 @@ impl Config {
 pub struct App {
     pub pool: SqlitePool,
     config: Config,
+    wallet: Option<Arc<dyn WalletAdapter>>,
 }
 type Result<T> = std::result::Result<T, ApiError>;
 #[derive(Debug)]
@@ -167,6 +172,36 @@ async fn list(c: &mut SqliteConnection, kind: &str, owner: &str) -> Result<Vec<V
 }
 impl App {
     pub async fn open(config: Config) -> std::result::Result<Self, sqlx::Error> {
+        let network =
+            Network::parse(&config.network).map_err(|e| sqlx::Error::Protocol(e.into()))?;
+        let wallet: Option<Arc<dyn WalletAdapter>> = match std::env::var("WALLET_BACKEND")
+            .as_deref()
+        {
+            Ok("zingo") => Some(Arc::new(ZingoWallet::new(network))),
+            Ok("mock") | Err(std::env::VarError::NotPresent) if network != Network::Mainnet => None,
+            Err(std::env::VarError::NotPresent) => Some(Arc::new(ZingoWallet::new(network))),
+            _ => {
+                return Err(sqlx::Error::Protocol(
+                    "Invalid or unsafe WALLET_BACKEND".into(),
+                ));
+            }
+        };
+        Self::open_with_wallet(config, wallet).await
+    }
+    /// Adapter injection is a server-side integration seam; no HTTP route configures it.
+    pub async fn open_with_wallet(
+        config: Config,
+        wallet: Option<Arc<dyn WalletAdapter>>,
+    ) -> std::result::Result<Self, sqlx::Error> {
+        let network =
+            Network::parse(&config.network).map_err(|e| sqlx::Error::Protocol(e.into()))?;
+        if wallet.as_ref().is_some_and(|w| w.network() != network)
+            || (network == Network::Mainnet && wallet.is_none())
+        {
+            return Err(sqlx::Error::Protocol(
+                "Wallet network mismatch or mainnet mock mode".into(),
+            ));
+        }
         let opts = SqliteConnectOptions::from_str(&config.database_url)?
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
@@ -176,6 +211,19 @@ impl App {
             .connect_with(opts)
             .await?;
         sqlx::migrate!().run(&pool).await?;
+        sqlx::query("INSERT OR IGNORE INTO deployment_network VALUES(1,?)")
+            .bind(network.as_str())
+            .execute(&pool)
+            .await?;
+        let stored: String =
+            sqlx::query_scalar("SELECT network FROM deployment_network WHERE singleton=1")
+                .fetch_one(&pool)
+                .await?;
+        if stored != network.as_str() {
+            return Err(sqlx::Error::Protocol(
+                "Database belongs to a different network".into(),
+            ));
+        }
         // A server-only signing key survives restarts; never returned by an API.
         sqlx::query("INSERT OR IGNORE INTO app_secrets(name, value) VALUES('merchant_ack', ?)")
             .bind(format!(
@@ -185,7 +233,16 @@ impl App {
             ))
             .execute(&pool)
             .await?;
-        Ok(Self { pool, config })
+        let app = Self {
+            pool,
+            config,
+            wallet,
+        };
+        // Read-only recovery; pending operations are never submitted on startup.
+        app.reconcile_wallet_operations()
+            .await
+            .map_err(|_| sqlx::Error::Protocol("Wallet recovery failed".into()))?;
+        Ok(app)
     }
     pub fn router(self) -> Router {
         let cors = CorsLayer::new()
@@ -246,9 +303,16 @@ async fn dispatch(
     let write = method != Method::GET;
     let mut tx = app.pool.begin_with("BEGIN IMMEDIATE").await?;
     if path == "health" && method == Method::GET {
+        let unresolved: i64 = sqlx::query_scalar("SELECT count(*) FROM wallet_operations WHERE network=? AND state IN ('pending','unknown','broadcast','mined')").bind(&app.config.network).fetch_one(&mut *tx).await?;
+        let last_run: Option<String> = sqlx::query_scalar(
+            "SELECT max(last_reconciled_at) FROM wallet_operations WHERE network=?",
+        )
+        .bind(&app.config.network)
+        .fetch_one(&mut *tx)
+        .await?;
         return Ok(reply(
             200,
-            &json!({"status":"ok","network":app.config.network,"wallet":"ready","walletBackend":"mock","mode":"mock","chainHeight":null,"confirmationsRequired":1,"reconciler":{"lastRunAt":null,"unresolved":0},"chainWatcher":{"lastBlockAt":null,"watchDepth":100,"deepReorgAlert":false}}),
+            &json!({"status":"ok","network":app.config.network,"wallet":if app.wallet.is_some(){"broadcast_disabled"}else{"ready"},"walletBackend":if app.wallet.is_some(){"zingo"}else{"mock"},"mode":if app.wallet.is_some(){"disabled"}else{"mock"},"chainHeight":null,"confirmationsRequired":1,"reconciler":{"lastRunAt":last_run,"unresolved":unresolved},"chainWatcher":{"lastBlockAt":null,"watchDepth":100,"deepReorgAlert":false}}),
             false,
         ));
     }
@@ -367,12 +431,25 @@ async fn dispatch(
         response.headers_mut().insert("cache-control", "no-store".parse().unwrap());
         return Ok(response);
     }
-    let outcome = perform(&mut tx, &parts, &method, &body, principal, uri.query()).await;
-    let (status, result) = match outcome {
+    let outcome = perform(
+        &mut tx,
+        &parts,
+        &method,
+        &body,
+        principal,
+        uri.query(),
+        &app,
+    )
+    .await;
+    let (status, mut result) = match outcome {
         Ok(x) => x,
         Err(e) if e.0 == 409 => (e.0, json!({"code":e.1,"message":e.1.replace('_'," ")})),
         Err(e) => return Err(e),
     };
+    let dispatch_operation = result
+        .as_object_mut()
+        .and_then(|v| v.remove("_dispatchOperation"))
+        .and_then(|v| v.as_str().map(str::to_owned));
     if let Some(k) = key {
         sqlx::query("INSERT INTO idempotency VALUES(?,?,?,?,?,?,?)")
             .bind(principal)
@@ -386,6 +463,10 @@ async fn dispatch(
             .await?;
     }
     tx.commit().await?;
+    if let Some(op) = dispatch_operation {
+        // Intent and immutable 202 snapshot are durable BEFORE touching an adapter.
+        app.dispatch_wallet_operation(&op).await?;
+    }
     Ok(reply(status, &result, false))
 }
 async fn save_agent(c: &mut SqliteConnection, a: &Value) -> Result<()> {
@@ -494,6 +575,14 @@ async fn expire(c: &mut SqliteConnection) -> Result<()> {
     }
     Ok(())
 }
+async fn invoice_for_payment(c: &mut SqliteConnection, iid: &str) -> Result<Value> {
+    let (_, mut invoice) = get(c, "invoice", iid).await?;
+    let claimed: i64 = sqlx::query_scalar("SELECT count(*) FROM wallet_operations WHERE invoice_id=? AND backend='zingo' AND state!='failed_definitive'").bind(iid).fetch_one(c).await?;
+    if claimed > 0 {
+        invoice["status"] = json!("payment_pending");
+    }
+    Ok(invoice)
+}
 async fn expire_invoice(c: &mut SqliteConnection, owner: &str, invoice: &mut Value) -> Result<()> {
     if invoice["status"] == "open"
         && invoice
@@ -522,6 +611,7 @@ async fn perform(
     b: &Value,
     owner: &str,
     query: Option<&str>,
+    app: &App,
 ) -> Result<(u16, Value)> {
     expire(c).await?;
     match (m.as_str(), p) {
@@ -613,7 +703,7 @@ async fn perform(
             text(b, "reference", 64)?;
             let amount = zat(b, "amountZat")?;
             let mut a = owned(c, "agent", aid, owner).await?;
-            let (_, i) = get(c, "invoice", iid).await?;
+            let i = invoice_for_payment(c, iid).await?;
             let cap =
                 Utc::now() + Duration::seconds(a["policy"]["requestTtlSeconds"].as_i64().unwrap());
             let expires = if let Some(e) = b.get("expiresAt") {
@@ -625,7 +715,7 @@ async fn perform(
             let violations = evaluate(&a, &i, amount, &expires, 0)?;
             let d = decision(c, b, &a["policy"], violations).await?;
             let status = d["result"].as_str().unwrap();
-            let payment = json!({"id":id("pay"),"agentId":aid,"merchantId":i["merchantId"],"invoiceId":iid,"amountZat":b["amountZat"],"reference":b["reference"],"status":status,"decision":d,"timeline":[{"status":status,"kind":"status","at":now(),"note":"Mock policy evaluation; no blockchain activity"}],"createdAt":now(),"expiresAt":expires,"pool":null,"txid":null,"mockRef":id("mock"),"confirmations":0,"failure":null,"walletOperation":null});
+            let payment = json!({"id":id("pay"),"agentId":aid,"merchantId":i["merchantId"],"invoiceId":iid,"amountZat":b["amountZat"],"reference":b["reference"],"status":status,"decision":d,"timeline":[{"status":status,"kind":"status","at":now(),"note":if app.wallet.is_some(){"Policy evaluation only; no blockchain activity"}else{"Mock policy evaluation; no blockchain activity"}}],"createdAt":now(),"expiresAt":expires,"pool":null,"txid":null,"mockRef":if app.wallet.is_some(){Value::Null}else{json!(id("mock"))},"confirmations":0,"failure":null,"walletOperation":null});
             let count = if status == "authorized" {
                 "approvedCount"
             } else {
@@ -717,7 +807,7 @@ async fn perform(
             let aid = payment["agentId"].as_str().unwrap().to_owned();
             let mut a = owned(c, "agent", &aid, owner).await?;
             let iid = payment["invoiceId"].as_str().unwrap().to_owned();
-            let (_, mut invoice) = get(c, "invoice", &iid).await?;
+            let mut invoice = invoice_for_payment(c, &iid).await?;
             let amount = zat(&payment, "amountZat")?;
             let violations = evaluate(
                 &a,
@@ -744,15 +834,34 @@ async fn perform(
                 put(c, "payment", pid, owner, &payment).await?;
                 return Err(ApiError(409, "POLICY_REJECTED"));
             }
+            if app.wallet.is_some() {
+                let op = id("wop");
+                sqlx::query("INSERT INTO wallet_operations(id,payment_id,attempt,backend,state,created_at,updated_at,network,invoice_id,destination,amount_zat) VALUES(?,?,1,'zingo','pending',?,?,?,?,?,?)")
+                    .bind(&op).bind(pid).bind(now()).bind(now()).bind(&app.config.network)
+                    .bind(&iid)
+                    .bind(invoice["payTo"].as_str().ok_or_else(invalid)?).bind(amount).execute(&mut *c).await?;
+                event(
+                    &mut payment,
+                    "submitted",
+                    "status",
+                    "Durable operation recorded; no broadcast established",
+                );
+                payment["walletOperation"] = json!({"id":op,"state":"pending","attempt":1,"needsOperator":false,"lastReconciledAt":null});
+                payment["mockRef"] = Value::Null;
+                put(c, "payment", pid, owner, &payment).await?;
+                payment["_dispatchOperation"] = json!(op);
+                return Ok((202, payment));
+            }
             // SQLite's IMMEDIATE write lock serializes the authorization check and operation insertion.
             // The mock engine is a pure database simulation: there is no external send or crash gap.
             let op = id("wop");
-            sqlx::query("INSERT INTO wallet_operations VALUES(?,?,1,'mock','final',?,NULL,?,?)")
+            sqlx::query("INSERT INTO wallet_operations(id,payment_id,attempt,backend,state,wallet_op_ref,txid,created_at,updated_at,network) VALUES(?,?,1,'mock','final',?,NULL,?,?,?)")
                 .bind(&op)
                 .bind(pid)
                 .bind(payment["mockRef"].as_str())
                 .bind(now())
                 .bind(now())
+                .bind(&app.config.network)
                 .execute(&mut *c)
                 .await?;
             event(
@@ -855,6 +964,9 @@ async fn perform(
 
 // Mock receipts only: no chain is queried and confirmations are simulated.
 fn verification(payment: &Value, invoice: &Value) -> Result<Value> {
+    if payment["mockRef"].is_null() {
+        return Err(ApiError(409, "VERIFICATION_UNAVAILABLE"));
+    }
     let seen = payment["walletOperation"].is_object() && payment["status"] == "confirmed";
     let confirmations = if seen {
         payment["confirmations"].as_i64().unwrap_or(0)

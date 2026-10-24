@@ -16,4 +16,5 @@ hmac = "0.12"
 tower-http = { version = "0.6", features = ["cors"] }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
