@@ -1,8 +1,8 @@
 use super::*;
 
 impl App {
-    async fn operation_intent(&self, op: &str) -> Result<SendIntent> {
-        let row = sqlx::query("SELECT payment_id,network,destination,amount_zat FROM wallet_operations WHERE id=? AND backend='zingo' AND network=?")
+    pub(crate) async fn operation_intent(&self, op: &str) -> Result<SendIntent> {
+        let row = sqlx::query("SELECT payment_id,network,destination,amount_zat,txid FROM wallet_operations WHERE id=? AND backend='zingo' AND network=?")
             .bind(op).bind(&self.config.network).fetch_optional(&self.pool).await?.ok_or(ApiError(404,"NOT_FOUND"))?;
         Ok(SendIntent {
             operation_id: op.into(),
@@ -10,6 +10,7 @@ impl App {
             network: Network::parse(row.get::<&str, _>(1)).map_err(|_| invalid())?,
             destination: row.get(2),
             amount_zat: row.get(3),
+            expected_txid: row.get(4),
         })
     }
 
@@ -60,20 +61,22 @@ impl App {
         let Some(adapter) = &self.wallet else {
             return Ok(());
         };
-        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM wallet_operations WHERE backend='zingo' AND network=? AND state IN ('pending','unknown','broadcast','mined')")
+        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM wallet_operations WHERE backend='zingo' AND network=? AND (state IN ('pending','unknown','broadcast','mined') OR (state='final' AND manual_phase IS NOT NULL))")
             .bind(&self.config.network).fetch_all(&self.pool).await?;
         for op in ids {
             let intent = self.operation_intent(&op).await?;
-            let outcome =
-                tokio::time::timeout(StdDuration::from_secs(30), adapter.observe(&intent))
-                    .await
-                    .unwrap_or(WalletOutcome::Unknown);
+            let outcome = tokio::time::timeout(
+                StdDuration::from_secs(if adapter.requires_operator() { 180 } else { 30 }),
+                adapter.observe(&intent),
+            )
+            .await
+            .unwrap_or(WalletOutcome::Unknown);
             self.apply_wallet_outcome(&intent, outcome, false).await?;
         }
         Ok(())
     }
 
-    async fn apply_wallet_outcome(
+    pub(crate) async fn apply_wallet_outcome(
         &self,
         intent: &SendIntent,
         outcome: WalletOutcome,
@@ -81,14 +84,16 @@ impl App {
     ) -> Result<()> {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
-            "SELECT state,txid,created_at FROM wallet_operations WHERE id=? AND network=?",
+            "SELECT state,txid,created_at,manual_phase FROM wallet_operations WHERE id=? AND network=?",
         )
         .bind(&intent.operation_id)
         .bind(intent.network.as_str())
         .fetch_one(&mut *tx)
         .await?;
         let state: String = row.get(0);
-        if matches!(state.as_str(), "final" | "failed_definitive") {
+        if state == "failed_definitive"
+            || (state == "final" && !self.wallet.as_ref().is_some_and(|w| w.requires_operator()))
+        {
             return Ok(());
         }
         let known_txid: Option<String> = row.get(1);
@@ -107,6 +112,20 @@ impl App {
                 && id.bytes().all(|b| b.is_ascii_hexdigit())
                 && known_txid.as_ref().is_none_or(|old| old == id)
         };
+        let required = if self.wallet.as_ref().is_some_and(|w| w.requires_operator()) {
+            3
+        } else {
+            1
+        };
+        let still_final = matches!(&outcome,WalletOutcome::Mined{txid,confirmations} if valid_txid(txid) && *confirmations>=required);
+        if state == "final" && !still_final {
+            // Reorg/uncertainty moves spent value back to a held reservation, once.
+            usage(&mut agent, -intent.amount_zat, intent.amount_zat)?;
+            agent["usage"]["pendingCount"] =
+                json!(agent["usage"]["pendingCount"].as_i64().unwrap() + 1);
+            save_agent(&mut tx, &agent).await?;
+            payment["confirmations"] = json!(0);
+        }
         let (next, status, note) = match outcome {
             WalletOutcome::Broadcast { txid: id } if valid_txid(&id) => {
                 txid = Some(id);
@@ -120,19 +139,34 @@ impl App {
             WalletOutcome::Mined {
                 txid: id,
                 confirmations,
-            } if valid_txid(&id) && confirmations > 0 => {
+            } if valid_txid(&id) && confirmations >= required => {
                 txid = Some(id);
                 payment["failure"] = Value::Null;
                 payment["confirmations"] = json!(confirmations);
                 // One confirmation is the existing API's configured finality threshold.
-                usage(&mut agent, intent.amount_zat, -intent.amount_zat)?;
-                agent["usage"]["pendingCount"] =
-                    json!(agent["usage"]["pendingCount"].as_i64().unwrap() - 1);
-                save_agent(&mut tx, &agent).await?;
+                if state != "final" {
+                    usage(&mut agent, intent.amount_zat, -intent.amount_zat)?;
+                    agent["usage"]["pendingCount"] =
+                        json!(agent["usage"]["pendingCount"].as_i64().unwrap() - 1);
+                    save_agent(&mut tx, &agent).await?;
+                }
                 (
                     "final",
                     "confirmed",
                     "Wallet observed a mined transaction; merchant receipt not verified",
+                )
+            }
+            WalletOutcome::Mined {
+                txid: id,
+                confirmations,
+            } if valid_txid(&id) && confirmations > 0 => {
+                txid = Some(id);
+                payment["confirmations"] = json!(confirmations);
+                payment["failure"] = Value::Null;
+                (
+                    "mined",
+                    "confirming",
+                    "Wallet observed transaction below required confirmation depth",
                 )
             }
             WalletOutcome::RejectedBeforeCreation(reason)
@@ -172,6 +206,23 @@ impl App {
                 )
             }
         };
+        let manual_phase: Option<String> = row.get(3);
+        if let Some(phase) = manual_phase {
+            payment["walletOperation"]["requiresOperatorConfirmation"] = json!(
+                matches!(phase.as_str(), "awaiting_operator" | "prepared")
+                    && !matches!(next, "broadcast" | "mined" | "final")
+            );
+            payment["walletOperation"]["phase"] = json!(if phase == "submitting"
+                || matches!(next, "broadcast" | "mined" | "final")
+            {
+                "observing"
+            } else {
+                &phase
+            });
+        }
+        if matches!(next, "unknown" | "broadcast") {
+            payment["confirmations"] = json!(0);
+        }
         let age = Utc::now() - date(row.get::<&str, _>(2))?;
         payment["txid"] = json!(txid);
         payment["walletOperation"]["state"] = json!(next);
@@ -181,8 +232,8 @@ impl App {
         if payment["status"] != status || state != next {
             event(&mut payment, status, "status", note);
         }
-        sqlx::query("UPDATE wallet_operations SET state=?,txid=?,updated_at=?,last_reconciled_at=? WHERE id=?")
-            .bind(next).bind(txid).bind(&checked).bind(&checked).bind(&intent.operation_id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE wallet_operations SET state=?,txid=?,updated_at=?,last_reconciled_at=?,manual_phase=CASE WHEN manual_phase IS NOT NULL AND (manual_phase='submitting' OR ? IN ('broadcast','mined','final')) THEN 'observing' ELSE manual_phase END WHERE id=?")
+            .bind(next).bind(txid).bind(&checked).bind(&checked).bind(next).bind(&intent.operation_id).execute(&mut *tx).await?;
         put(
             &mut tx,
             "payment",

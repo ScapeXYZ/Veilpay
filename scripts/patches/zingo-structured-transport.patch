@@ -1,0 +1,69 @@
+--- a/zingo-cli/src/commands.rs
++++ b/zingo-cli/src/commands.rs
+@@ -181 +181 @@
+-        Ok(bal) => Ok(bal.to_string()),
++        Ok(bal) => Ok(json::JsonValue::from(bal).pretty(JSON_INDENT)),
+@@ -908,4 +908,32 @@
+-    match lightclient.transaction_summaries(false).await {
+-        Ok(transactions) => Ok(transactions.to_string()),
+-        Err(e) => Err(not_yet_typed(e)),
+-    }
++    use pepper_sync::wallet::{NoteInterface, OutputInterface};
++    let chain = lightclient.chain_type();
++    let wallet = lightclient.wallet().read().await;
++    let summaries = wallet.transaction_summaries(false).await.map_err(not_yet_typed)?;
++    let mut result = json::JsonValue::from(summaries);
++    let mut received = Vec::new();
++    for transaction in wallet.wallet_transactions.values() {
++        for output in transaction.orchard_notes() {
++            let receiver = zcash_keys::address::UnifiedAddress::from_receivers(
++                Some(output.note().recipient()), None, None, None, None,
++            ).ok_or_else(|| not_yet_typed(std::io::Error::other("invalid Orchard receiver")))?;
++            received.push(object! {
++                "txid" => transaction.txid().to_string(),
++                "output_index" => output.output_id().output_index(),
++                "address" => receiver.encode(&chain),
++                "value" => output.value(),
++                "datetime" => transaction.datetime(),
++                "status" => transaction.status().to_string(),
++                "blockheight" => u32::from(transaction.status().get_height()),
++            });
++        }
++    }
++    result["veilpay_schema"] = 1.into();
++    result["network"] = match chain {
++        zingolib::config::ChainType::Testnet => "testnet",
++        zingolib::config::ChainType::Mainnet => "mainnet",
++        _ => "regtest",
++    }.into();
++    result["tip_height"] = wallet.sync_state.last_known_chain_height().map(u32::from).into();
++    result["scanned_height"] = wallet.sync_state.fully_scanned_height().map(u32::from).into();
++    result["received_outputs"] = received.into();
++    Ok(result.pretty(JSON_INDENT))
+--- a/zingo-cli/src/lib.rs
++++ b/zingo-cli/src/lib.rs
+@@ -562,0 +563,24 @@
++    // VeilPay's offline machine session keeps a proposal alive between send and
++    // calculate. It cannot confirm/transmit, restore, or reveal private material.
++    if std::env::var("VEILPAY_MACHINE").as_deref() == Ok("1") {
++        use std::io::{BufRead, Write};
++        if cli_config.communications != Communications::DeliberateOffline {
++            return ExitCode::FAILURE;
++        }
++        for line in std::io::stdin().lock().lines() {
++            let result = line.map_err(|e| e.to_string()).and_then(|line| {
++                let tokens = shellwords::split(&line).map_err(|e| e.to_string())?;
++                let command = commands::parse_command_tokens(&tokens)?;
++                if !matches!(command, commands::CliCommand::Send { .. }
++                    | commands::CliCommand::Calculate | commands::CliCommand::Quit) {
++                    return Err("unsupported machine command".to_string());
++                }
++                send_request(Request::Command(command))
++            });
++            let (ok, output) = match result { Ok(s) => (true, s), Err(_) => (false, String::new()) };
++            println!("{}", json::object! { "ok" => ok, "output" => output }.dump());
++            let _ = std::io::stdout().flush();
++            if !ok { return ExitCode::FAILURE; }
++        }
++        return ExitCode::SUCCESS;
++    }

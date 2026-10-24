@@ -1,175 +1,24 @@
 openapi: 3.1.0
 info:
   title: VeilPay API
-  version: 1.1.0-draft
-  description: 'Single API contract for VeilPay (Zecathon 2026, Shielded Payments).
-
-    Rules baked into this contract:
-
-    - Money is always an integer zatoshi string (1 ZEC = 100000000 zat). Never floats.
-
-    - Every status is owned by the backend. The frontend never infers or advances a status.
-
-    - Policy is enforced server-side only. The frontend renders decisions, never makes them.
-
-    - No secret material ever leaves the backend: no seeds, spending keys, full or incoming viewing keys.
-
-    - No txid, address or amount in any URL or query string. Ids are opaque.
-
-    - Merchant IVK lives only in the merchant verification service; no endpoint returns it.
-
-    - Testnet, 1 confirmation by default (configurable server-side).
-
-
-    NORMATIVE (applies to every operation):
-
-
-    ROLES. Every authenticated operation requires a session context. Customer-only: /agents*, /payments/request,
-    GET /payments, GET /payments/{id}, /payments/{id}/execute. Merchant-only: /merchant/*, /payments/{id}/verification,
-    /payments/{id}/acknowledgment. Wrong context returns 403 WRONG_CONTEXT; a record outside the caller''s scope
-    returns 404. POST /session/demo lets anyone mint either role: this is DEMO ISOLATION between two contexts, NOT
-    identity or auth security. Testnet only, no real funds, not for production.
-
-
-    MERCHANT KEY CUSTODY. In this MVP the demo backend acts as the merchant. The merchant incoming viewing key (account-wide)
-    is held server-side by the verification service, so the operator is trusted with ALL incoming receipts to the
-    merchant account. This is NOT browser-local or noncustodial verification. No customer key (spending or viewing)
-    is ever requested, stored or shared. No endpoint returns any key.
-
-
-    IDEMPOTENCY. Every POST that creates or moves state requires Idempotency-Key. Scope = (principal, operation,
-    key). Same scope + same payload: return the ORIGINAL status code and body exactly (e.g. the original 201 for
-    /payments/request), plus header Idempotent-Replay: true; never re-run side effects. Exception: a pre-transition
-    503 WALLET_UNAVAILABLE is NOT cached, so a retry with the same key genuinely retries. Same scope + different
-    payload: 409 IDEMPOTENCY_MISMATCH. Keys retained at least 24h.
-
-
-    EXECUTE IS SINGLE-SEND. Execute atomically moves the payment authorized to submitted (compare-and-set on the
-    payment row) BEFORE calling the wallet. Only the winner of that transition sends. A same-key attempt (including
-    a concurrent one) waits for and replays the ORIGINAL response. Only a DIFFERENT-key duplicate gets the current
-    Payment state as 202. Neither ever triggers a second send.
-
-
-    UNKNOWN OUTCOME. If the wallet call times out or returns an ambiguous error after the transition, the payment
-    stays submitted with outcome unknown (failure.code=OUTCOME_UNKNOWN, retriable=false); the backend reconciles
-    (see WALLET OPERATIONS). Clients must not retry the send, and the backend never automatically resends an ambiguous
-    payment. 503 WALLET_UNAVAILABLE is returned only when the wallet was unreachable BEFORE the transition, payment
-    still authorized, and is safe to retry.
-
-
-    MOCK MODE. When /health mode=mock, the UI shows a persistent MOCK banner. Mock payments never carry an on-chain
-    txid (txid null, mockRef set), pool null, and Verification.method=mock with mock=true. merchant_ivk_scan is
-    only ever reported in real mode.
-
-
-    BUDGET RESERVATION. Budget checks run atomically per agent (lock the agent''s budget row, check and reserve
-    in the same transaction), so concurrent DIFFERENT payments for one agent are serialized and can never jointly
-    overspend.
-
-    - At request: check spentZat + reservedZat + amount <= totalBudgetZat and amount <= perTxLimitZat; if authorized,
-    reserve amount in the same transaction.
-
-    - At execute: REUSE the payment''s own reservation. reservedOther = reservedZat - ownReservation; check spentZat
-    + reservedOther + amount <= totalBudgetZat and amount <= perTxLimitZat. Never reserve the same amount twice;
-    adjust by an atomic delta only if the amount changed.
-
-    - On policy rejection (at request or at execute) any reservation for that payment is released atomically in
-    the same transaction.
-
-    - The reservation is held through authorized, submitted, confirming and OUTCOME_UNKNOWN; it becomes spent on
-    confirmed, and is released only on rejected, a definitive failed, or expired.
-
-
-    WALLET OPERATIONS (durable). Every send is a durable wallet_operation row written in the SAME transaction as
-    the authorized->submitted CAS, BEFORE the wallet is called: {id, paymentId, attempt (always 1), backend, state,
-    walletOpRef, txid, createdAt, updatedAt}. Operation states: pending (row written, wallet not yet acknowledged)
-    -> broadcast (wallet returned a txid or operation id) -> mined -> final, or -> failed_definitive, or -> unknown.
-    On every process start and on a timer, a reconciler loads all operations in pending/broadcast/unknown and resolves
-    each from the wallet''s transaction history and the chain (by walletOpRef/txid and the invoice payTo + amount),
-    never by sending. A payment leaves unknown only when the reconciler finds either the transaction (-> confirming/confirmed)
-    or definitive proof it was never created and cannot be (-> failed with a definitive code). There is exactly
-    one wallet operation per payment; a second send for the same payment is impossible by contract. Semantics are
-    fail-closed AT-MOST-ONCE delivery, not guaranteed delivery. A payment unresolved after the reconcile window
-    (default 2h, configurable) stays unknown and is surfaced for manual operator action; it is never auto-resent.
-
-
-    FAILURES. Definitive (reservation released, payment failed): REJECTED_BY_WALLET_PRE_BROADCAST (wallet rejected
-    before creating a tx, e.g. INSUFFICIENT_FUNDS, invalid address), EXPIRED_UNMINED (tx expiry height passed, tx
-    confirmed absent from chain and mempool by the reconciler), BROADCAST_REJECTED (node rejected the tx and the
-    wallet confirms it is not pending). Uncertain (reservation HELD, status stays submitted, failure.code=OUTCOME_UNKNOWN):
-    timeouts, connection drops, crashes after the operation row is written, any wallet error that does not prove
-    the tx was never created. Only definitive failures are terminal.
-
-
-    POLICY, PAUSE AND RESERVATIONS. Policy is versioned; every Decision records policyVersion. Updates never rewrite
-    history:
-
-    - requested/authorized (not yet sent): execute re-evaluates against the CURRENT policy version. If the new policy
-    (lower cap, smaller budget, merchant removed) no longer allows it, execute rejects atomically (POLICY_REJECTED)
-    and releases the reservation.
-
-    - PUT /policy that lowers totalBudgetZat below spentZat + reservedZat is accepted, but blocks all new authorizations
-    until usage fits; it never cancels payments already submitted/confirming/unknown.
-
-    - Pausing an agent: new requests are rejected (AGENT_PAUSED), authorized-but-unsent payments are rejected at
-    execute and released. Payments already submitted, confirming or unknown are NOT cancelled or reversed (a broadcast
-    tx cannot be recalled); they keep their reservation and resolve normally.
-
-    - Shielded sends cannot be reversed. After broadcast, no policy change, pause or merchant removal affects the
-    outcome; the UI says so.
-
-
-    CHAIN EVENTS. A chain watcher, separate from the reconciler, tracks every payment in confirming or confirmed
-    (and every invoice with a receipt) on each new block: it recomputes confirmations from the tip and detects reorgs
-    by checking the tx''s block hash is still in the best chain. Tracking continues until watchDepth (default 100
-    blocks, configurable) past the tx''s block; after that the payment is treated as final for this app. There is
-    NO absolute finality: a reorg deeper than watchDepth is not tracked automatically and is surfaced to the operator
-    via /health.
-
-    - Reorg accounting (under the per-agent budget lock, each move applied exactly once, guarded by a per-payment
-    accounting_state of spent|reserved|released): confirmed -> confirming moves amount spent -> reserved once; reconfirmation
-    moves reserved -> spent once; definitive EXPIRED_UNMINED moves reserved -> released once. A move whose source
-    state does not match is a no-op, so replays and repeated watcher passes never double count.
-
-    - Reorg: if a payment''s tx drops out of the best chain, confirmed or confirming moves back to confirming (confirmations
-    recomputed, possibly 0, timeline event "reorg"). If the tx is later found absent from chain and mempool past
-    its expiry height, it becomes failed EXPIRED_UNMINED and the reservation is released. Verification follows the
-    same rule (received -> pending). This is the only backward transition in the status machine.
-
-    - Late payment: a receipt to an invoice address after expiresAt is still recorded; Verification.state=late (amount
-    and confirmations shown). The invoice becomes paid_late, never silently paid. The merchant may acknowledge a
-    late receipt only when confirmations >= confirmationsRequired AND receivedZat equals expectedZat exactly.
-
-    - State precedence when several apply: amount_mismatch > late > received > pending > not_seen. A late receipt
-    with the wrong amount is amount_mismatch (late=true flag set), and cannot be acknowledged.
-
-    - Invoice expiry: an open invoice past expiresAt becomes expired; new payment requests against it are rejected
-    (INVOICE_NOT_PAYABLE). A payment already submitted before expiry is unaffected and resolves normally (may surface
-    as late).
-
-    - Under/overpayment: Verification.state=amount_mismatch with expectedZat and receivedZat; never auto-marked
-    received.
-
-
-    SESSIONS, CSRF, COOKIES. The session cookie is named __Host-veilpay_session: HttpOnly, Secure, SameSite=Strict,
-    Path=/, no Domain attribute (required by the __Host- prefix), max age 8h, rotated on context switch. Every state-changing
-    request (POST/PUT/PATCH/DELETE) must carry the header X-CSRF-Token equal to the csrfToken returned by /session/demo
-    or GET /session (double-submit bound to the session), and an Origin header matching the configured frontend
-    origin; otherwise 403 CSRF_FAILED. CORS allows only that origin, with credentials. BOOTSTRAP EXCEPTION: POST
-    /session/demo is the only state-changing route exempt from X-CSRF-Token (no session exists yet) and from Idempotency-Key
-    (each call mints a fresh session; repeats are harmless and rate-limited). It still requires an Origin header
-    matching the frontend origin (403 CSRF_FAILED otherwise) and is rate-limited per IP. Demo role switching is
-    enabled only when the backend runs with network=testnet or regtest; on mainnet the endpoint returns 404. It
-    is not production authentication.
-
-
-    BREAKING CHANGE v1.0 -> v1.1 (failure codes). Removed and mapped: WALLET_ERROR -> REJECTED_BY_WALLET_PRE_BROADCAST
-    if the wallet proves no tx was created, else OUTCOME_UNKNOWN; BROADCAST_FAILED -> BROADCAST_REJECTED (definitive)
-    or OUTCOME_UNKNOWN (uncertain); EXPIRED_BEFORE_MINING -> EXPIRED_UNMINED. INSUFFICIENT_FUNDS unchanged. Also
-    new: Verification.state late, Invoice.status paid_late, required failure.definitive, required X-CSRF-Token header,
-    cookie renamed to __Host-veilpay_session.
-
-    '
+  version: 1.2.0-draft
+  description: >-
+    VeilPay demo backend. Default mock mode preserves simulated payments and non-spendable
+    invoice payloads. WALLET_BACKEND=zingo-cli enables a real, pinned, testnet-only wallet
+    transport. HTTP execute stages an operation; only a separate interactive operator CLI
+    can prepare/sign or broadcast, each under a distinct exact confirmation. Mainnet CLI
+    execution is refused. No API exposes seeds, keys, private viewing material or raw history.
+    Demo sessions separate customer and merchant roles but do not provide production identity.
+    Writes require an exact configured Origin and session-bound X-CSRF-Token; POST operations
+    also require Idempotency-Key except demo bootstrap. Same-key responses are immutable
+    snapshots; use payment detail and verification for current state. Unknown outcomes hold
+    reservations and are never automatically resent. The merchant independently scans its
+    own wallet; exact receiver, amount, expected txid and three confirmations are required.
+    Duplicate, conflicting, underpaid or reorg-related observations prevent acknowledgment.
+    Acknowledgments are server-authenticated merchant statements, not cryptographic settlement
+    proofs. Fees are separately approved by the operator; policy budgets track payment principal.
+    Testnet transactions have no automatic development/test execution path. See the README and
+    testnet guide for the required CLI source patches and manual operator procedure.
 servers:
 - url: http://localhost:4000/api
   description: local backend
@@ -182,10 +31,12 @@ tags:
 security:
 - session: []
 x-current-implementation:
-  wallet: Built-in Zingo adapter has no CLI or network transport and cannot open wallets or broadcast. Its observe result is always unknown.
-  execution: Non-mock execution is durable and fail-closed. Trusted adapter fixtures validate lifecycle transitions without real transactions.
-  finality: Sender-side confirmation does not mark an invoice paid. Independent merchant verification and reorg watching remain future work.
-  reconciliation: Startup and every 60 seconds; 30-second adapter deadlines; operator flag after two hours unknown. No automatic resubmission.
+  wallet: WALLET_BACKEND=zingo-cli uses only testnet, the exact pinned Zingo revision, waitsync patch, and structured-transport patch. WALLET_BACKEND=zingo remains a disabled adapter. Mock remains default.
+  execution: HTTP execute only stages an immutable 202 snapshot in zingo-cli mode. A separate operator terminal requires exact confirmations for offline preparation and single-txid submission. Mainnet CLI mode is refused.
+  verification: Independent merchant wallet Orchard history, receiver, exact zatoshis, expected txid, scan completion, and three confirmations are required. No sender assertion is used as receipt evidence.
+  reorgs: Read-only reconciliation rechecks final manual operations and merchant receipts. Lost depth holds a reservation again; lost receipts reopen or expire the invoice and invalidate reliance on an acknowledgment.
+  limitations: Orchard-only invoices, one transaction per preparation, no TEX/multistep sends, no automatic resending, no cryptographic settlement proofs or independent header-chain verification. Wallet scan errors return 503 and never fabricate absence.
+  fees: Policy budgets cover transferred zatoshis. Operator approves a separate maximum network fee before signing, then the exact fee before broadcast.
 paths:
   /health:
     get:
@@ -530,18 +381,14 @@ paths:
       - payments
       summary: Record a single durable execution attempt; live broadcasting disabled
       description: >-
-        Only from authorized. Current policy, budget, and invoice eligibility are checked
-        atomically. Mock mode preserves the existing atomic simulation. With WALLET_BACKEND=zingo,
-        intent, reservation, submitted state, and an immutable 202 response snapshot commit
-        before the adapter is called. Same-key retries return that snapshot, which may still
-        show pending; GET the payment for current state. Different-key retries return the
-        current payment without dispatching again. A durable claim precedes the adapter;
-        cancellation or timeout becomes unknown and holds the reservation. Startup and the
-        60-second reconciler observe only and never submit. Unknown after two hours requires
-        operator attention. At most one unresolved or successful external operation may own
-        an invoice, including across distinct payments. Mainnet broadcasts are unconditionally
-        blocked. The built-in Zingo adapter creates no transaction on either network; it
-        reports WALLET_BROADCAST_DISABLED and the reservation is released exactly once.
+        Current policy, budget, invoice eligibility and durable operation uniqueness are
+        checked atomically. Mock mode retains atomic simulation. In zingo-cli mode this
+        endpoint ONLY stages submitted/pending with requiresOperatorConfirmation=true;
+        it never signs or broadcasts. Preparation and single-txid transmission require
+        separate operator-terminal confirmations. Same-key retries replay the immutable
+        original 202 snapshot. Different-key retries return current state without another
+        wallet call. Startup/timer reconciliation only observes. Ambiguity holds reservations
+        and never causes a resend. Disabled zingo mode still fails definitively before creation.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -583,15 +430,13 @@ paths:
       tags:
       - merchant
       summary: Merchant-side receipt verification for this payment's invoice (merchant context)
-      description: 'Computed by the merchant verification service using the merchant''s incoming viewing key,
-
-        held only server-side in that service. Returns only facts about the expected receipt for THIS
-
-        invoice. Never returns the IVK, other receipts, the customer''s address or wallet history.
-
-        A merchant can only read payments addressed to its own merchantId; anything else is 404.
-
-        '
+      description: >-
+        In zingo-cli mode, synchronizes the independent merchant wallet and matches only
+        its decrypted Orchard outputs to this invoice receiver, exact amount, and expected
+        txid. Requires complete scanning and three confirmations. Duplicate/conflicting
+        receipts block acknowledgment. Reorg-related changes invalidate current reliance
+        on prior acknowledgments. Returns only this invoice receipt, never raw history or
+        private material. A foreign merchant receives 404. Mock verification is unchanged.
       responses:
         '200':
           description: ok
@@ -606,7 +451,13 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
-          description: VERIFICATION_UNAVAILABLE for non-mock operations; independent merchant receipt verification is not implemented
+          description: VERIFICATION_UNAVAILABLE when the selected adapter lacks merchant scanning
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: WALLET_UNAVAILABLE; malformed output, stale/incomplete scan, lock, pin, process, or network failure. No successful wallet outcome is inferred.
           content:
             application/json:
               schema:
@@ -623,7 +474,10 @@ paths:
       summary: Merchant acknowledges receipt (only after verification says received)
       description: The acknowledgment is a signed merchant statement, NOT a cryptographic proof of settlement. The
         UI must label it that way. Allowed when Verification.state=received, or state=late with confirmations >=
-        confirmationsRequired and receivedZat == expectedZat. Never on amount_mismatch.
+        confirmationsRequired and receivedZat == expectedZat. Never on underpaid, amount_mismatch,
+        duplicate, conflicting or reorged. Real statements bind invoice, network, txid,
+        amount, observation depth and timestamp using a server-held HMAC key. HMAC is
+        server-authenticated and is not publicly verifiable settlement evidence.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -647,7 +501,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: NOT_YET_RECEIVED, ALREADY_ACKNOWLEDGED, AMOUNT_MISMATCH, or VERIFICATION_UNAVAILABLE for non-mock operations
+          description: NOT_YET_RECEIVED, ALREADY_ACKNOWLEDGED, AMOUNT_MISMATCH, or VERIFICATION_UNAVAILABLE for unsupported adapters
           content:
             application/json:
               schema:
@@ -656,6 +510,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: WALLET_UNAVAILABLE; malformed output, stale/incomplete scan, lock, pin, process, or network failure. No successful wallet outcome is inferred.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       x-role: merchant
       security:
       - session: []
@@ -663,7 +523,7 @@ paths:
     post:
       tags:
       - merchant
-      summary: Create a merchant invoice with an explicitly non-spendable mock receiver
+      summary: Create a mock invoice or a real Orchard testnet receiving invoice
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -709,6 +569,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           description: IDEMPOTENCY_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: WALLET_UNAVAILABLE; malformed output, stale/incomplete scan, lock, pin, process, or network failure. No successful wallet outcome is inferred.
           content:
             application/json:
               schema:
@@ -864,11 +730,13 @@ components:
           - syncing
           - unavailable
           - broadcast_disabled
+          - operator_required
         walletBackend:
           type: string
           enum:
           - zingolib
           - zingo
+          - zingo-cli
           - zallet
           - mock
         chainHeight:
@@ -884,6 +752,7 @@ components:
           - real
           - mock
           - disabled
+          - testnet_manual
           description: mock is simulation; disabled means the built-in Zingo adapter cannot broadcast or establish chain readiness.
         reconciler:
           type: object
@@ -900,11 +769,15 @@ components:
           - unresolved
         chainWatcher:
           type: object
+          description: supported=false means no independent header watcher; other fields do not assert chain safety.
           required:
           - lastBlockAt
           - watchDepth
           - deepReorgAlert
           properties:
+            supported:
+              type: boolean
+              description: false in this implementation; reorg-related changes come from wallet observations.
             lastBlockAt:
               type:
               - string
@@ -1164,6 +1037,8 @@ components:
           - policy_changed
           - agent_paused
           - late_receipt
+          - verification
+          - wallet
     Payment:
       type: object
       required:
@@ -1216,8 +1091,7 @@ components:
           type:
           - string
           - 'null'
-          description: 'Real mode only: on-chain txid, customer context, after submit, never in URLs. Always null
-            in mock mode.'
+          description: Actual signed transaction ID in manual testnet mode, including before broadcast when phase=prepared. Presence alone does not establish submission or inclusion. Always null in mock mode.
         failure:
           type:
           - object
@@ -1313,24 +1187,30 @@ components:
           $ref: '#/components/schemas/Zatoshi'
         payTo:
           type: string
-          description: Unique mock-only receiver in the current backend; not a Zcash address.
+          description: Unique demo receiver in mock mode; fresh Orchard-only utest1 address in zingo-cli mode.
+        network:
+          type: string
+          enum: [testnet]
+          description: Present for real testnet invoices. Legacy mock invoices omit it.
         paymentPayload:
           type: object
-          description: QR-ready mock payload. Never pass to a Zcash wallet. Legacy invoices may omit this field.
-          required: [format, uri, mock, spendable]
-          properties:
-            format:
-              type: string
-              const: veilpay-mock-v1
-            uri:
-              type: string
-              description: 'veilpay-mock:{invoiceId}?amountZat={exact integer amount}'
-            mock:
-              type: boolean
-              const: true
-            spendable:
-              type: boolean
-              const: false
+          description: Demo payloads must never be sent to a wallet. Only zip321/testnet payloads are spendable testnet requests.
+          oneOf:
+          - required: [format, uri, mock, spendable]
+            properties:
+              format: {type: string, const: veilpay-mock-v1}
+              uri: {type: string}
+              mock: {type: boolean, const: true}
+              spendable: {type: boolean, const: false}
+          - required: [format, uri, mock, spendable, network]
+            properties:
+              format: {type: string, const: zip321}
+              uri:
+                type: string
+                description: ZIP-321 URI with an exact eight-decimal ZEC amount; invoice expiry is enforced separately by VeilPay.
+              network: {type: string, const: testnet}
+              mock: {type: boolean, const: false}
+              spendable: {type: boolean, const: true}
         status:
           type: string
           enum:
@@ -1371,6 +1251,10 @@ components:
           - late
           - amount_mismatch
           - expired
+          - underpaid
+          - duplicate
+          - conflicting
+          - reorged
         expectedZat:
           $ref: '#/components/schemas/Zatoshi'
         receivedZat:
@@ -1383,8 +1267,9 @@ components:
           type: string
           enum:
           - merchant_ivk_scan
+          - merchant_wallet_scan
           - mock
-          description: 'merchant_ivk_scan (real mode only): operator-held, account-wide merchant IVK scan, server-side;
+          description: 'merchant_wallet_scan uses independently decrypted wallet history; it is not a settlement proof. merchant_ivk_scan (real mode only): operator-held, account-wide merchant IVK scan, server-side;
             custodial, not a per-payment disclosure proof. mock: simulated, no chain read.'
         checkedAt:
           type: string
@@ -1393,6 +1278,21 @@ components:
           type: boolean
         late:
           type: boolean
+        network:
+          type: string
+          enum: [testnet]
+        txid:
+          type: [string, 'null']
+        blockHeight:
+          type: integer
+        tipHeight:
+          type: integer
+        acknowledgmentEligible:
+          type: boolean
+          description: Current observation is sufficient to issue a merchant statement.
+        acknowledgmentValid:
+          type: boolean
+          description: An existing statement is still eligible for current reliance and has not been invalidated.
     Acknowledgment:
       type: object
       required:
@@ -1412,7 +1312,17 @@ components:
           type: string
         signature:
           type: string
-          description: Merchant service signature over (paymentId, receivedZat, at). A statement, not chain proof.
+          description: Server-held HMAC-SHA256 statement. Real mode additionally binds invoice, network, txid, observed depth and the statement label. Not a publicly verifiable settlement proof.
+        evidence:
+          $ref: '#/components/schemas/Verification'
+        statementType:
+          type: string
+          const: merchant_acknowledgment_not_settlement_proof
+        invalidatedAt:
+          type: string
+          format: date-time
+        invalidationReason:
+          type: string
     Error:
       type: object
       required:
@@ -1437,6 +1347,7 @@ components:
           - OUTCOME_UNKNOWN
           - CSRF_FAILED
           - AMOUNT_MISMATCH
+          - VERIFICATION_UNAVAILABLE
         message:
           type: string
           description: Safe for display. Never contains addresses, keys, amounts of other records or stack traces.
@@ -1470,6 +1381,13 @@ components:
           - string
           - 'null'
           format: date-time
+        requiresOperatorConfirmation:
+          type: boolean
+        phase:
+          type: string
+          enum: [awaiting_operator, preparing, prepared, submitting, observing]
+        feeZat:
+          $ref: '#/components/schemas/Zatoshi'
         needsOperator:
           type: boolean
           description: true when unresolved past the reconcile window; never auto-resent.

@@ -1,120 +1,128 @@
 # VeilPay backend
 
-Rust Axum API with SQLite persistence. Default execution, receiving addresses,
-verification, and signed acknowledgments are simulations. An acknowledgment is a
-signed merchant statement, never a cryptographic settlement proof.
-
-Run locally:
+Rust Axum and SQLite. Default mock mode preserves the existing demo invoices,
+policy engine, simulated execution, and mock verification. Mainnet execution is
+disabled. An acknowledgment is a merchant statement, never a cryptographic
+settlement proof.
 
 ```bash
-NETWORK=testnet DATABASE_URL=sqlite://veilpay.db FRONTEND_ORIGIN=http://localhost:3000 cargo run --locked --manifest-path backend/Cargo.toml
+NETWORK=testnet WALLET_BACKEND=mock DATABASE_URL=sqlite://veilpay.db FRONTEND_ORIGIN=http://localhost:3000 cargo run --locked --manifest-path backend/Cargo.toml
 ```
 
-The frontend origin must match exactly. Demo sessions use a Secure, HttpOnly,
-SameSite=Strict cookie and require Origin plus a session-bound CSRF token for writes.
-Use an HTTPS browser environment that supports Secure cookies. All demo merchant
-sessions share `mer_demo`; all customer sessions share `customer_demo`. These are
-role demos, not production tenant authentication. Mainnet demo login is disabled.
+Demo sessions share `customer_demo` and `mer_demo`; they provide role isolation,
+not production identity. Writes require Origin and session-bound CSRF. POSTs also
+require an 8–128 byte idempotency key, except session bootstrap. Cookies are
+Secure, HttpOnly, and SameSite=Strict. No frontend files are changed.
 
-## Invoice milestone
+## Milestone 3
 
-- `POST /api/merchant/invoices`: merchant context, CSRF, and an 8–128 byte
-  `Idempotency-Key` required. Accepts `reference` (1–64 characters, not blank),
-  `amountZat` (canonical decimal integer string, 1–2100000000000000), and optional
-  future RFC3339 `expiresAt` (defaults to 24 hours). Invalid inputs return 400.
-  Returns 201 with a unique opaque ID, unique mock receiver, and QR-ready
-  `paymentPayload` using `veilpay-mock:{id}?amountZat={amount}`. This is explicitly
-  non-spendable, not a ZIP-321 Zcash request. No floating point amounts are used.
-- `GET /api/merchant/invoices`: returns only the current merchant's records.
-  Refreshes expired open invoices and persists their status.
-- `GET /api/merchant/invoices/{id}`: returns an owned invoice, refreshing expiry;
-  missing or foreign-owned records return 404. Customer context returns 403.
+`WALLET_BACKEND=zingo-cli` selects the real **testnet-only** process transport.
+It requires the existing independent customer/merchant wallets, explicit
+`VEILPAY_WALLET_ROOT`, and a private absolute SQLite path outside the repository.
+The transport checks the source revision, both source patch checksums, binary
+checksums, existing wallet metadata, and a shared nonblocking wallet lock. It
+never reads recovery metadata or exports keys. Child environments omit seed/key
+variables; raw stderr is discarded and CLI logs stay under the private root.
+Missing wallets are refused, never created. The backend itself parses no wallet
+file; only the pinned CLI opens existing wallet files.
 
-Creation and the saved idempotency response commit in one SQLite `BEGIN IMMEDIATE`
-transaction. Concurrent retries return the original bytes with
-`Idempotent-Replay: true`; changing the payload under the same key returns 409.
-Invoice reads reflect current expiry; replaying creation preserves its original
-snapshot. Existing records without expiry or payment payload remain readable.
-API JSON responses carry `Cache-Control: no-store`.
+Verified against source revision `6d43e7c48343cc39cf99bad7e05349baaf4f0b90`:
 
-See [OpenAPI](contracts/openapi.yaml) for existing session, agent settings, policy,
-payment request, execution, verification, acknowledgment, and timeline contracts.
-There is no frontend source in this checkout; no frontend files were changed.
-Some OpenAPI descriptions specify intended real-wallet behavior beyond the current
-mock implementation. Health reports mock mode; do not interpret it as chain readiness.
+- `new_address o`: new Orchard-only testnet receiver for an invoice.
+- `balance`: exact zatoshi balance, structured by the supplied patch.
+- `--server ... --waitsync info` and `transactions`: network check, complete
+  synchronization, and structured wallet observations.
+- Offline `send ADDRESS ZAT`: proposal and fee; **does not broadcast**.
+- Offline `calculate` in the same process: prepares/signs one transaction.
+- `transmit TXID`: transmits only the explicitly approved prepared transaction.
+  Bare `transmit`, `confirm`, and `quicksend` are never used by the transport.
+  Before approval, the persisted signed transaction is inspected offline: unknown
+  fees, extra external recipients (including donations), or unsupported pools are refused.
 
-## Review and checks
+HTTP execution only stages a durable operation. The separate `veilpay-testnet`
+operator binary requires a terminal and distinct exact confirmations before
+preparation and submission. The fee is checked against an operator-approved
+ceiling before signing; submission displays the actual fee. Policy budgets
+continue to track transferred principal; network fees are separately approved.
+
+One operation per payment and one unresolved/successful external operation per
+invoice remain enforced. Manual phases and signed txids are durable before
+submission. Unknown outcomes retain reservations; restart/reconciliation never
+resends or repeats preparation. Current policy, pause, and expiry are rechecked
+before both manual actions. A policy rejection after staging keeps the reservation
+held for operator review. A preparation failure also remains unknown conservatively.
+
+Merchant verification independently syncs the merchant wallet and matches its
+Orchard receiver, exact amount, txid, network, and three-confirmation depth.
+Repeated identical outputs are deduplicated. Underpayment, overpayment, duplicate
+transactions, conflicts, incomplete scans, and reorg-related observations prevent
+acknowledgment. Sender confirmation alone never marks an invoice paid. Final manual
+sender operations are rechecked; lost depth moves spent principal back into a
+reservation. Merchant receipt loss reopens/expires invoices and marks historical
+acknowledgments invalid for current reliance. Signatures and idempotency snapshots
+remain historical records. A recovered receipt does not revive an invalidated
+acknowledgment.
+
+## API changes
+
+No new HTTP routes; mock invoice APIs and behavior are preserved.
+
+- `POST /api/merchant/invoices`: real mode obtains a fresh merchant Orchard
+  receiver and returns `network: testnet` with a spendable ZIP-321 payload such as
+  `zcash:utest1...?amount=0.00100000`. Mock payloads remain `veilpay-mock:` with
+  `spendable: false`. Amounts remain canonical positive zatoshi strings; expiry
+  defaults to 24 hours. Address generation failure returns 503 without a fake receiver.
+- `GET /api/merchant/invoices` and `GET /api/merchant/invoices/{id}`: existing
+  merchant-scoped reads include real payloads and independently verified paid,
+  paid_late, reopened, or expired state.
+- `POST /api/payments/request`: existing policies and principal reservations.
+- `POST /api/payments/{id}/execute`: real mode stages pending with
+  `requiresOperatorConfirmation: true`; no signing or submission occurs via HTTP.
+  Same-key responses replay the original snapshot; poll payment detail for changes.
+- `GET /api/payments` and `GET /api/payments/{id}`: manual phase, actual txid,
+  approved fee, confirmation changes, unknown outcomes, and verification timeline.
+  A prepared txid alone does not establish broadcast or chain inclusion.
+- `GET /api/payments/{id}/verification`: independent `merchant_wallet_scan`;
+  adds underpaid, duplicate, conflicting, and reorged states and observation heights.
+  `acknowledgmentEligible` describes receipt eligibility;
+  `acknowledgmentValid` describes current reliance on an existing statement.
+- `POST /api/payments/{id}/acknowledgment`: requires a fresh independent receipt;
+  real HMAC statement binds invoice, network, txid, amount, depth, and time. It is
+  server-authenticated, not publicly verifiable settlement evidence. Returns 503
+  on a failed scan and 409 when receipt conditions are not met.
+- `GET /api/health`: real transport reports `testnet_manual`, `zingo-cli`, and
+  `operator_required`, with depth 3. Configuration status does not establish live
+  connectivity. Legacy mock/disabled adapter health remains compatible.
+
+See [OpenAPI](contracts/openapi.yaml) and the exact operator instructions in
+[Milestone 3 testnet guide](docs/MILESTONE3_TESTNET.md).
+
+## Validation and unsupported capabilities
 
 ```bash
-git diff --check
-git diff -- backend/src/lib.rs backend/tests/milestone1.rs contracts/openapi.yaml README.md
 cargo fmt --manifest-path backend/Cargo.toml -- --check
 cargo clippy --locked --manifest-path backend/Cargo.toml --all-targets --all-features -- -D warnings
 cargo test --locked --manifest-path backend/Cargo.toml
+bash -n scripts/install-testnet-wallet.sh
+git diff --check
 ```
 
-`cargo audit` and `cargo deny` are not installed in the current environment;
-dependency advisory/license auditing remains outstanding. Authorization, CSRF,
-role isolation, durable replay, and concurrency regressions are covered by tests.
+Tests use synthetic CLI JSON and a synthetic executable with a dummy wallet marker;
+they require no funds, secrets, installed Zingo, or network. The source patch was
+also compile-checked against the downloaded public pinned source without running
+a wallet. No real wallet operation was performed during implementation.
 
-Remaining after the invoice milestone (see Milestone 2 below): durable external execution and ambiguous failure recovery;
-network-separated wallet adapters with mainnet broadcasting disabled; independent
-merchant wallet observations, confirmations, invoice matching, and acknowledgment
-semantics; frontend contract reconciliation. Real-wallet receiving-address
-allocation is required before invoices can carry spendable payment requests.
-No wallet scripts need to be run for this milestone. Do not run provisioning or
-funding commands as part of review. Existing integration details are in
-[the testnet notes](docs/REAL_TESTNET.md).
+Unsupported: mainnet transport; production authentication/custody; automatic
+funding or spending; TEX/multistep proposals; Sapling/transparent/mixed-receiver
+invoice matching; proving settlement cryptographically; independent header-chain
+validation or block-hash reorg proofs; automatic resending, recalculation, or
+releasing ambiguous transactions. Reorg handling follows changes reported by the
+synchronized wallet; upstream sync and its indexer remain trusted. Large histories
+are bounded to 8 MiB and fail closed. The 180-second CLI deadline may be insufficient
+for a cold sync; synchronize manually first. Wallet calls take a shared lock and
+verification currently holds a SQLite write transaction, limiting concurrency.
+`cargo-audit` and `cargo-deny` are unavailable, so dependency auditing remains open.
 
-## Milestone 2: durable execution and disabled Zingo adapter
-
-`WALLET_BACKEND=mock` remains the testnet/regtest default and preserves all invoice
-APIs and atomic simulated execution. `WALLET_BACKEND=zingo` selects the typed,
-network-separated Zingo boundary. Mainnet defaults to Zingo and refuses mock mode.
-There is no broadcast-enabling setting: both Zingo networks refuse submission and
-mainnet also has an unconditional application-level dispatch block. The adapter
-contains no subprocess, wallet opening, recovery-data access, or send transport.
-Its typed network binding does not claim chain connectivity. Existing wallet
-scripts are unchanged and were not executed.
-
-The external execution path commits a unique operation, exact amount, destination,
-network, reservation, and idempotent 202 snapshot before adapter dispatch. A second
-commit claims dispatch by marking the operation unknown. Cancellation/crashes
-across either checkpoint never cause an automatic send on restart. Duplicate
-payments cannot claim the same unresolved/successful invoice. Only a conclusive
-pre-creation broadcast refusal or typed wallet rejection releases the reservation; unknown outcomes hold it.
-Sender observations need a valid, matching txid before confirmation can consume
-the reservation. They do not mark the merchant invoice paid.
-
-The server reconciles on startup and every 60 seconds using observation only,
-with 30-second adapter deadlines. Unknown operations older than two hours expose
-`needsOperator: true`. No reconciliation route accepts client-provided evidence.
-The current Zingo observer returns unknown because independent wallet history
-transport is not implemented. Live wallet transport, fee/address validation for
-spendable sends, independent merchant verification, and reorg handling remain
-blocked integration work; this milestone must not be described as live payment
-support or cryptographic settlement proof.
-
-Changed API behavior (no new HTTP routes):
-
-- `GET /api/health`: adds `mode: disabled`, `wallet: broadcast_disabled`, and
-  `walletBackend: zingo` for the disabled adapter; reports persisted unresolved
-  operation counts and the latest processed observation timestamp.
-- `POST /api/payments/request`: rejects an invoice already claimed by an external
-  operation through the existing `INVOICE_NOT_PAYABLE` policy violation. Zingo
-  requests carry no mock reference and use a neutral policy timeline message.
-- `POST /api/payments/{id}/execute`: durable external lifecycle with an immutable
-  202 snapshot. Replay can show pending even after the operation changes; poll
-  the existing payment detail route. A disabled broadcast yields a current
-  payment with `failed`, `failed_definitive`, and `WALLET_BROADCAST_DISABLED`.
-- `GET /api/payments` and `GET /api/payments/{id}`: expose current durable operation,
-  failure, reservation-related state, and timeline through the existing fields.
-- `GET /api/payments/{id}/verification` and
-  `POST /api/payments/{id}/acknowledgment`: non-mock operations fail closed with
-  409 `VERIFICATION_UNAVAILABLE`; mock semantics are unchanged.
-
-Migration `0003_wallet_lifecycle.sql` retains legacy mock operations and adds
-constraints for network, amount, state, one attempt per payment, and one active
-external operation per invoice. A database binds to one network on first upgraded
-open; use different SQLite files for testnet and mainnet. Do not change the network
-of an existing deployment database. Legacy mock rows retain `legacy_mock` metadata.
+Migrations preserve earlier operations, bind databases to a network, and add
+manual phases, fees, and unique real receiving addresses. Older mock invoices
+remain readable. The earlier disabled `WALLET_BACKEND=zingo` mode remains available.

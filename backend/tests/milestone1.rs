@@ -1429,6 +1429,7 @@ async fn wallet_and_database_networks_are_enforced_without_opening_wallets() {
     for network in [Network::Testnet, Network::Mainnet] {
         let wallet = ZingoWallet::new(network);
         let intent = SendIntent {
+            expected_txid: None,
             operation_id: "op".into(),
             payment_id: "pay".into(),
             network,

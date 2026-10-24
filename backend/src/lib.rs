@@ -1,5 +1,9 @@
 mod execution;
+pub mod manual;
+mod merchant;
+pub mod transport;
 pub mod wallet;
+pub mod zcash;
 use axum::{
     Router,
     body::Bytes,
@@ -19,7 +23,7 @@ use sqlx::{
 use std::sync::Arc;
 use std::{net::SocketAddr, str::FromStr, time::Duration as StdDuration};
 use tower_http::cors::CorsLayer;
-use wallet::{Network, SendIntent, WalletAdapter, WalletOutcome, ZingoWallet};
+use wallet::{CliWallet, Network, SendIntent, WalletAdapter, WalletOutcome, ZingoWallet};
 
 #[derive(Clone)]
 pub struct Config {
@@ -177,6 +181,44 @@ impl App {
         let wallet: Option<Arc<dyn WalletAdapter>> = match std::env::var("WALLET_BACKEND")
             .as_deref()
         {
+            Ok("zingo-cli") if network == Network::Testnet => {
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                let options = SqliteConnectOptions::from_str(&config.database_url)?;
+                let file = options.get_filename();
+                let parent = file
+                    .parent()
+                    .filter(|_| file.is_absolute())
+                    .ok_or_else(|| {
+                        sqlx::Error::Protocol(
+                            "Live testnet database must be an absolute path outside the repository"
+                                .into(),
+                        )
+                    })?;
+                let parent = parent.canonicalize()?;
+                let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .unwrap();
+                if parent.starts_with(repo)
+                    || std::fs::metadata(&parent)?.permissions().mode() & 0o077 != 0
+                    || std::fs::symlink_metadata(file)
+                        .is_ok_and(|m| !m.is_file() || m.permissions().mode() & 0o077 != 0)
+                {
+                    return Err(sqlx::Error::Protocol(
+                        "Live testnet database must use a private directory and file".into(),
+                    ));
+                }
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .mode(0o600)
+                    .open(file)?;
+                let root = std::env::var_os("VEILPAY_WALLET_ROOT").ok_or_else(|| {
+                    sqlx::Error::Protocol("VEILPAY_WALLET_ROOT required for zingo-cli".into())
+                })?;
+                Some(Arc::new(CliWallet::new(
+                    transport::TestnetTransport::from_root(root.into()),
+                )))
+            }
             Ok("zingo") => Some(Arc::new(ZingoWallet::new(network))),
             Ok("mock") | Err(std::env::VarError::NotPresent) if network != Network::Mainnet => None,
             Err(std::env::VarError::NotPresent) => Some(Arc::new(ZingoWallet::new(network))),
@@ -312,7 +354,7 @@ async fn dispatch(
         .await?;
         return Ok(reply(
             200,
-            &json!({"status":"ok","network":app.config.network,"wallet":if app.wallet.is_some(){"broadcast_disabled"}else{"ready"},"walletBackend":if app.wallet.is_some(){"zingo"}else{"mock"},"mode":if app.wallet.is_some(){"disabled"}else{"mock"},"chainHeight":null,"confirmationsRequired":1,"reconciler":{"lastRunAt":last_run,"unresolved":unresolved},"chainWatcher":{"lastBlockAt":null,"watchDepth":100,"deepReorgAlert":false}}),
+            &json!({"status":"ok","network":app.config.network,"wallet":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"operator_required"}else if app.wallet.is_some(){"broadcast_disabled"}else{"ready"},"walletBackend":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"zingo-cli"}else if app.wallet.is_some(){"zingo"}else{"mock"},"mode":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"testnet_manual"}else if app.wallet.is_some(){"disabled"}else{"mock"},"chainHeight":null,"confirmationsRequired":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){3}else{1},"reconciler":{"lastRunAt":last_run,"unresolved":unresolved},"chainWatcher":{"supported":false,"lastBlockAt":null,"watchDepth":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){0}else{100},"deepReorgAlert":false}}),
             false,
         ));
     }
@@ -678,10 +720,26 @@ async fn perform(
             let invoice_id = id("inv");
             // Deliberately not a ZIP-321 URI: mock receivers must never reach a wallet.
             let qr_payload = format!("veilpay-mock:{invoice_id}?amountZat={amount}");
-            let i = json!({"id":invoice_id,"merchantId":owner,"reference":reference,
+            let mut i = json!({"id":invoice_id,"merchantId":owner,"reference":reference,
                 "amountZat":amount.to_string(),"payTo":format!("mock-only:NOT-A-ZCASH-ADDRESS:{}",id("recv")),
                 "status":"open","createdAt":created.to_rfc3339(),"expiresAt":expires.to_rfc3339(),
                 "paymentPayload":{"format":"veilpay-mock-v1","uri":qr_payload,"mock":true,"spendable":false}});
+            if let Some(wallet) = &app.wallet
+                && wallet.requires_operator()
+            {
+                let address = wallet
+                    .receiving_address()
+                    .await
+                    .map_err(|_| ApiError(503, "WALLET_UNAVAILABLE"))?;
+                let reused:i64=sqlx::query_scalar("SELECT count(*) FROM records WHERE kind='invoice' AND json_extract(body,'$.network')='testnet' AND json_extract(body,'$.payTo')=?").bind(&address).fetch_one(&mut *c).await?;
+                if reused != 0 {
+                    return Err(ApiError(503, "WALLET_UNAVAILABLE"));
+                }
+                let zec = format!("{}.{:08}", amount / 100_000_000, amount % 100_000_000);
+                i["network"] = json!("testnet");
+                i["payTo"] = json!(address);
+                i["paymentPayload"] = json!({"format":"zip321","uri":format!("zcash:{address}?amount={zec}"),"network":"testnet","mock":false,"spendable":true});
+            }
             put(c, "invoice", i["id"].as_str().unwrap(), owner, &i).await?;
             Ok((201, i))
         }
@@ -849,7 +907,19 @@ async fn perform(
                 payment["walletOperation"] = json!({"id":op,"state":"pending","attempt":1,"needsOperator":false,"lastReconciledAt":null});
                 payment["mockRef"] = Value::Null;
                 put(c, "payment", pid, owner, &payment).await?;
-                payment["_dispatchOperation"] = json!(op);
+                if app.wallet.as_ref().is_some_and(|w| w.requires_operator()) {
+                    sqlx::query(
+                        "UPDATE wallet_operations SET manual_phase='awaiting_operator' WHERE id=?",
+                    )
+                    .bind(&op)
+                    .execute(&mut *c)
+                    .await?;
+                    payment["walletOperation"]["requiresOperatorConfirmation"] = json!(true);
+                    payment["walletOperation"]["phase"] = json!("awaiting_operator");
+                    put(c, "payment", pid, owner, &payment).await?;
+                } else {
+                    payment["_dispatchOperation"] = json!(op);
+                }
                 return Ok((202, payment));
             }
             // SQLite's IMMEDIATE write lock serializes the authorization check and operation insertion.
@@ -905,7 +975,7 @@ async fn perform(
                 return Err(ApiError(404, "NOT_FOUND"));
             }
             let (_, invoice) = get(c, "invoice", payment["invoiceId"].as_str().unwrap()).await?;
-            Ok((200, verification(&payment, &invoice)?))
+            Ok((200, app.verify_payment(c, &payment, &invoice).await?))
         }
         ("POST", ["payments", pid, "acknowledgment"]) => {
             let (_, payment) = get(c, "payment", pid).await?;
@@ -916,7 +986,7 @@ async fn perform(
                 text(b, "note", 280)?;
             }
             let (_, invoice) = get(c, "invoice", payment["invoiceId"].as_str().unwrap()).await?;
-            let receipt = verification(&payment, &invoice)?;
+            let receipt = app.verify_payment(c, &payment, &invoice).await?;
             if receipt["state"] == "amount_mismatch" {
                 return Err(ApiError(409, "AMOUNT_MISMATCH"));
             }
@@ -949,9 +1019,30 @@ async fn perform(
                     .unwrap()
                     .as_bytes(),
             );
-            // Authenticates a simulated merchant statement, never blockchain settlement.
-            let signature = format!("mock:hmac-sha256:{:x}", mac.finalize().into_bytes());
+            if receipt["mock"] == false {
+                mac.update(
+                    serde_json::to_string(&json!([
+                        payment["invoiceId"],
+                        receipt["network"],
+                        receipt["txid"],
+                        receipt["confirmations"],
+                        "merchant statement; not settlement proof"
+                    ]))
+                    .unwrap()
+                    .as_bytes(),
+                );
+            }
+            // Authenticates a merchant statement, never a cryptographic settlement proof.
+            let signature = format!(
+                "{}hmac-sha256:{:x}",
+                if receipt["mock"] == true { "mock:" } else { "" },
+                mac.finalize().into_bytes()
+            );
             let mut ack = json!({"paymentId":pid,"merchantId":owner,"at":at,"signature":signature});
+            if receipt["mock"] == false {
+                ack["evidence"] = receipt.clone();
+                ack["statementType"] = json!("merchant_acknowledgment_not_settlement_proof");
+            }
             if let Some(note) = b.get("note") {
                 ack["note"] = note.clone();
             }

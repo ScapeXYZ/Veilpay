@@ -1,0 +1,53 @@
+{
+  "address": {
+    "account": 0,
+    "address_index": 7,
+    "has_orchard": true,
+    "has_sapling": false,
+    "has_transparent": false,
+    "encoded_address": "utest1fixture"
+  },
+  "balance": {
+    "confirmed_orchard_balance": 100000,
+    "unconfirmed_orchard_balance": 0,
+    "total_orchard_balance": 100000
+  },
+  "history": {
+    "veilpay_schema": 1,
+    "network": "testnet",
+    "tip_height": 4534002,
+    "scanned_height": 4534002,
+    "transaction_summaries": [
+      {
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "datetime": 1792800000,
+        "status": "confirmed",
+        "blockheight": 4534000,
+        "kind": "sent",
+        "outgoing_orchard_notes": [
+          {
+            "value": 60,
+            "recipient": "utest1fixture",
+            "recipient_unified_address": "utest1fixture",
+            "scope": "external"
+          }
+        ],
+        "fee": 1000,
+        "outgoing_sapling_notes": [],
+        "outgoing_ironwood_notes": [],
+        "outgoing_transparent_coins": []
+      }
+    ],
+    "received_outputs": [
+      {
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_index": 0,
+        "address": "utest1fixture",
+        "value": 60,
+        "datetime": 1792800000,
+        "status": "confirmed",
+        "blockheight": 4534000
+      }
+    ]
+  }
+}
