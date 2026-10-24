@@ -68,3 +68,37 @@ describe("Invoice payment request safety", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/copy it manually/);
   });
 });
+
+// Milestone 3 real testnet invoice: backend-issued ZIP-321 payload for an Orchard-only utest1 UA.
+// Encoding vector only (receiver bytes 0x01..0x2b), never fund it.
+const UTEST = "utest1s9tgkxz3facm5lakztmrm7g062wxvq7kdd93w23kmr368h90wxjrc0la8cxwzfummn2wd2q3ql6t3nt77s5r3n3uflj8kz2e2sz5yrtk";
+const real: Invoice = {
+  ...invoice,
+  payTo: UTEST,
+  network: "testnet",
+  paymentPayload: { format: "zip321", uri: `zcash:${UTEST}?amount=0.12345678`, network: "testnet", mock: false, spendable: true },
+};
+
+describe("Backend ZIP-321 testnet invoices (Milestone 3)", () => {
+  it("renders the backend request only after full validation", () => {
+    expect(invoicePaymentUri(real)).toBe(real.paymentPayload!.uri);
+    const { container } = render(<InvoiceRequest invoice={real} demo={false} />);
+    expect(container.querySelector("svg")).not.toBeNull();
+    expect(screen.getByText(/Testnet only/)).toBeInTheDocument();
+  });
+  it.each([
+    ["demo mode", real, true],
+    ["amount differs from invoice", { ...real, amountZat: "12345679" }, false],
+    ["URI address differs from payTo", { ...real, paymentPayload: { ...real.paymentPayload!, uri: `zcash:${UTEST.slice(0, -1)}q?amount=0.12345678` } }, false],
+    ["payTo fails UA decoding", { ...real, payTo: "utest1backendaddress", paymentPayload: { ...real.paymentPayload!, uri: "zcash:utest1backendaddress?amount=0.12345678" } }, false],
+    ["invoice network missing", { ...real, network: undefined }, false],
+    ["multi-payment request", { ...real, paymentPayload: { ...real.paymentPayload!, uri: `zcash:${UTEST}?amount=0.12345678&address.1=${UTEST}&amount.1=1` } }, false],
+    ["expired", { ...real, expiresAt: "2000-01-01T00:00:00Z" }, false],
+    ["paid", { ...real, status: "paid" }, false],
+  ] as [string, Invoice, boolean][])("fails closed: %s", (_, inv, demo) => {
+    expect(invoicePaymentUri(inv, demo)).toBeNull();
+    const { container } = render(<InvoiceRequest invoice={inv} demo={demo} />);
+    expect(container.querySelector("svg")).toBeNull();
+    expect(container.innerHTML).not.toContain("zcash:");
+  });
+});

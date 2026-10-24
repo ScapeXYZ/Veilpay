@@ -58,11 +58,18 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
           <dd className="text-xs">{fmtTime(v.checkedAt)}</dd>
         </div>
       </dl>
+      {v.acknowledgmentValid === false && (
+        <p className="mt-2 text-xs text-amber-300" data-testid="ack-invalidated">A previous acknowledgment is no longer valid to rely on: the backend invalidated it after the observation changed.</p>
+      )}
       {v.late && v.state === "amount_mismatch" && <p className="mt-2 text-xs text-amber-300">Also late: received after the invoice expired.</p>}
       <div className="mt-4 rounded-lg bg-zinc-950/60 px-3 py-2 text-xs text-zinc-400" data-testid="verification-method">
         <KeyRound size={12} className="mr-1 inline" aria-hidden />
         {v.method === "mock" ? (
           <>Method: <b>mock</b>. Simulated, no chain read. Not evidence of anything.</>
+        ) : v.method === "merchant_wallet_scan" ? (
+          <>
+            Method: <b>merchant wallet scan</b>. The merchant&apos;s own wallet independently decrypts its Orchard history and must match receiver, exact amount, expected txid and the required confirmations. Not a settlement proof. No customer key is involved.
+          </>
         ) : (
           <>
             Method: <b>merchant IVK scan</b>. The operator holds the merchant&apos;s incoming viewing key and scans server-side. Custodial, not a per-payment disclosure proof. No customer key is involved.
@@ -72,7 +79,10 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {done ? (
           <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="acknowledged">
-            <BadgeCheck size={16} aria-hidden /> Acknowledged {fmtTime(done.at)}. A signed statement by the merchant service, not chain proof.
+            <BadgeCheck size={16} aria-hidden /> Acknowledged {fmtTime(done.at)}. A server-authenticated merchant statement, not a settlement proof.
+            {done.invalidatedAt && (
+              <span className="text-amber-300" data-testid="ack-statement-invalidated"> Invalidated {fmtTime(done.invalidatedAt)}{done.invalidationReason ? `: ${done.invalidationReason}` : ""}.</span>
+            )}
           </span>
         ) : (
           <>

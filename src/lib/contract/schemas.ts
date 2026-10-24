@@ -17,16 +17,18 @@ export const Zatoshi = z.string().regex(/^(0|[1-9][0-9]{0,15})$/, "zatoshi must 
 export const Health = z.object({
   status: z.enum(["ok", "degraded", "down"]),
   network: z.enum(["testnet", "regtest", "mainnet"]),
-  wallet: z.enum(["ready", "syncing", "unavailable", "broadcast_disabled"]),
-  walletBackend: z.enum(["zingolib", "zingo", "zallet", "mock"]),
+  wallet: z.enum(["ready", "syncing", "unavailable", "broadcast_disabled", "operator_required"]),
+  walletBackend: z.enum(["zingolib", "zingo", "zingo-cli", "zallet", "mock"]),
   chainHeight: z.number().int().nullable(),
   confirmationsRequired: z.number().int().min(1),
-  mode: z.enum(["real", "mock", "disabled"]),
+  mode: z.enum(["real", "mock", "disabled", "testnet_manual"]),
   reconciler: z.object({
     lastRunAt: dateTime.nullable(),
     unresolved: z.number().int(),
   }),
   chainWatcher: z.object({
+    /** false = no independent header watcher; other fields then assert nothing about chain safety. */
+    supported: z.boolean().optional(),
     lastBlockAt: dateTime.nullable(),
     watchDepth: z.number().int(),
     deepReorgAlert: z.boolean(),
@@ -138,7 +140,7 @@ export const TimelineEvent = z.object({
   status: PaymentStatus,
   at: dateTime,
   note: z.string().optional(),
-  kind: z.enum(["status", "reorg", "reconciled", "policy_changed", "agent_paused", "late_receipt"]),
+  kind: z.enum(["status", "reorg", "reconciled", "policy_changed", "agent_paused", "late_receipt", "verification", "wallet"]),
 });
 
 export const FailureCode = z.enum([
@@ -179,6 +181,9 @@ export const WalletOperation = z
     state: WalletOperationState,
     attempt: z.literal(1),
     lastReconciledAt: dateTime.nullable().optional(),
+    requiresOperatorConfirmation: z.boolean().optional(),
+    phase: z.enum(["awaiting_operator", "preparing", "prepared", "submitting", "observing"]).optional(),
+    feeZat: Zatoshi.optional(),
     needsOperator: z.boolean(),
   })
   .nullable();
@@ -210,18 +215,31 @@ export const PaymentList = z.object({
   nextCursor: z.string().nullable().optional(),
 });
 
+/** Demo payload: never a wallet request, never rendered as a QR. */
+export const MockPaymentPayload = z.object({
+  format: z.literal("veilpay-mock-v1"),
+  uri: z.string(),
+  mock: z.literal(true),
+  spendable: z.literal(false),
+});
+
+/** Real testnet ZIP-321 request. The UI still re-validates address, amount and network before any QR. */
+export const Zip321PaymentPayload = z.object({
+  format: z.literal("zip321"),
+  uri: z.string(),
+  network: z.literal("testnet"),
+  mock: z.literal(false),
+  spendable: z.literal(true),
+});
+
 export const Invoice = z.object({
   id: z.string(),
   merchantId: z.string(),
   reference: z.string(),
   amountZat: Zatoshi,
   payTo: z.string().optional(),
-  paymentPayload: z.object({
-    format: z.literal("veilpay-mock-v1"),
-    uri: z.string(),
-    mock: z.literal(true),
-    spendable: z.literal(false),
-  }).optional(),
+  network: z.enum(["testnet"]).optional(),
+  paymentPayload: z.discriminatedUnion("format", [MockPaymentPayload, Zip321PaymentPayload]).optional(),
   status: z.enum(["open", "paid", "paid_late", "expired"]),
   expiresAt: dateTime.optional(),
   createdAt: dateTime,
@@ -237,7 +255,18 @@ export const InvoiceList = z.object({
   items: z.array(Invoice).optional(),
 });
 
-export const VerificationState = z.enum(["not_seen", "pending", "received", "late", "amount_mismatch", "expired"]);
+export const VerificationState = z.enum([
+  "not_seen",
+  "pending",
+  "received",
+  "late",
+  "amount_mismatch",
+  "expired",
+  "underpaid",
+  "duplicate",
+  "conflicting",
+  "reorged",
+]);
 
 export const Verification = z.object({
   paymentId: z.string(),
@@ -248,10 +277,16 @@ export const Verification = z.object({
   receivedZat: Zatoshi.optional(),
   confirmations: z.number().int(),
   confirmationsRequired: z.number().int(),
-  method: z.enum(["merchant_ivk_scan", "mock"]),
+  method: z.enum(["merchant_ivk_scan", "merchant_wallet_scan", "mock"]),
   checkedAt: dateTime,
   mock: z.boolean(),
   late: z.boolean().optional(),
+  network: z.enum(["testnet"]).optional(),
+  txid: z.string().nullable().optional(),
+  blockHeight: z.number().int().optional(),
+  tipHeight: z.number().int().optional(),
+  acknowledgmentEligible: z.boolean().optional(),
+  acknowledgmentValid: z.boolean().optional(),
 });
 
 export const AcknowledgmentCreate = z.object({ note: z.string().max(280).optional() });
@@ -262,6 +297,10 @@ export const Acknowledgment = z.object({
   at: dateTime,
   note: z.string().optional(),
   signature: z.string(),
+  evidence: Verification.optional(),
+  statementType: z.literal("merchant_acknowledgment_not_settlement_proof").optional(),
+  invalidatedAt: dateTime.optional(),
+  invalidationReason: z.string().optional(),
 });
 
 export const ErrorCode = z.enum([
@@ -280,6 +319,7 @@ export const ErrorCode = z.enum([
   "OUTCOME_UNKNOWN",
   "CSRF_FAILED",
   "AMOUNT_MISMATCH",
+  "VERIFICATION_UNAVAILABLE",
 ]);
 
 export const ApiErrorBody = z.object({

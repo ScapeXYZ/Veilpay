@@ -82,6 +82,23 @@ function compare(name: string, oa: OA, zs: Z, problems: string[]) {
       problems.push(`${name}: enum ${JSON.stringify(oaEnum)} vs zod ${JSON.stringify(ze)}`);
     return;
   }
+  const variants = r.oneOf?.filter((v) => !(v.type === "null"));
+  if (variants && !r.properties) {
+    // Discriminated object variants (e.g. Invoice.paymentPayload): match each by its `format` const.
+    const options = (inner.def as { options?: Z[] }).options;
+    if (!options) {
+      problems.push(`${name}: contract oneOf but zod is ${inner.def.type}`);
+      return;
+    }
+    if (options.length !== variants.length) problems.push(`${name}: ${variants.length} variants vs zod ${options.length}`);
+    for (const v of variants) {
+      const tag = v.properties?.format?.const;
+      const match = options.find((o) => JSON.stringify(zodEnumValues(o.def.shape!.format)) === JSON.stringify([tag]));
+      if (!match) problems.push(`${name}: no zod variant for format ${String(tag)}`);
+      else compare(`${name}<${String(tag)}>`, { type: "object", ...v }, match, problems);
+    }
+    return;
+  }
   const props = r.properties;
   if (props) {
     if (inner.def.type !== "object") {
@@ -108,9 +125,9 @@ function compare(name: string, oa: OA, zs: Z, problems: string[]) {
   if (r.items && inner.def.type === "array") compare(`${name}[]`, r.items, inner.def.element!, problems);
 }
 
-describe("contract v1.1 sync", () => {
+describe("contract v1.2 sync (backend Milestone 3)", () => {
   it("uses the current integration contract", () => {
-    expect(doc.info.version).toBe("1.1.0-draft");
+    expect(doc.info.version).toBe("1.2.0-draft");
     expect((doc as unknown as { paths: Record<string, unknown> }).paths["/merchant/invoices/{id}"]).toBeDefined();
   });
 
@@ -127,6 +144,14 @@ describe("contract v1.1 sync", () => {
     const problems: string[] = [];
     compare("Health", doc.components.schemas.Health, drifted as unknown as Z, problems);
     expect(problems.length).toBeGreaterThan(0);
+  });
+
+  it("detects drift inside paymentPayload variants (walker self-test)", async () => {
+    const { z } = await import("zod");
+    const onlyMock = z.object({ ...(contractSchemas.Invoice as unknown as { shape: Record<string, z.ZodType> }).shape, paymentPayload: z.discriminatedUnion("format", [z.object({ format: z.literal("veilpay-mock-v1"), uri: z.string(), mock: z.literal(true), spendable: z.literal(false) })]).optional() });
+    const problems: string[] = [];
+    compare("Invoice", doc.components.schemas.Invoice, onlyMock as unknown as Z, problems);
+    expect(problems.join("\n")).toMatch(/zip321|variants/);
   });
 
   for (const [name, zs] of Object.entries(contractSchemas)) {

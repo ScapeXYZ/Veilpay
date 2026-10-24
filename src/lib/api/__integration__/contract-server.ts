@@ -26,6 +26,13 @@ export async function startContractServer() {
   let sequence = 0;
   const id = (prefix: string) => `${prefix}_${String(++sequence).padStart(12, "0")}`;
   let origin = "";
+  // Milestone 3 shape: a real-testnet ZIP-321 invoice for an Orchard-only utest1 UA. Encoding vector
+  // only (receiver bytes 0x01..0x2b); nothing here is a wallet, a key, or chain data.
+  const M3_UA = "utest1s9tgkxz3facm5lakztmrm7g062wxvq7kdd93w23kmr368h90wxjrc0la8cxwzfummn2wd2q3ql6t3nt77s5r3n3uflj8kz2e2sz5yrtk";
+  invoices.set("inv_m3testnet00001", S.Invoice.parse({ id: "inv_m3testnet00001", merchantId: MERCHANT,
+    reference: "M3 testnet invoice", amountZat: "12345678", status: "open", createdAt: now(), expiresAt: future(),
+    payTo: M3_UA, network: "testnet", paymentPayload: { format: "zip321", uri: `zcash:${M3_UA}?amount=0.12345678`,
+      network: "testnet", mock: false, spendable: true } }));
 
   function payment(paymentId: string, status: S.PaymentStatus, patch: Partial<S.Payment> = {}): S.Payment {
     return S.Payment.parse({

@@ -16,6 +16,8 @@ import {
   shortId,
   timelineTitle,
   unresolvedOf,
+  awaitingOperatorConfirmation,
+  WALLET_PHASE_COPY,
 } from "@/lib/present";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
 import { SourceTag } from "./source";
@@ -115,7 +117,7 @@ function UnresolvedNotice({ p }: { p: Payment }) {
   const u = unresolvedOf(p);
   if (!u) return null;
   return (
-    <Notice tone={u.kind === "operator" ? "review" : "warning"} title={<span className="flex items-center gap-2">{u.kind === "operator" ? <Wrench size={15} aria-hidden /> : <RotateCcw size={15} aria-hidden />}{u.title}</span>} testId={`unresolved-${u.kind}`}>
+    <Notice tone={u.kind === "reconciling" ? "warning" : "review"} title={<span className="flex items-center gap-2">{u.kind !== "reconciling" ? <Wrench size={15} aria-hidden /> : <RotateCcw size={15} aria-hidden />}{u.title}</span>} testId={`unresolved-${u.kind}`}>
       <p>{u.body}</p>
       <p className="mt-1 text-xs text-zinc-400">{PROVISIONAL_RECONCILIATION}</p>
     </Notice>
@@ -204,7 +206,12 @@ export function PaymentDetail({ p }: { p: Payment }) {
                     {p.mockRef} <Badge tone="neutral" className="ml-1">not a txid</Badge>
                   </>
                 ) : p.txid ? (
-                  p.txid
+                  <>
+                    {p.txid}
+                    {awaitingOperatorConfirmation(op) && (
+                      <Badge tone="warning" className="ml-1" testId="txid-not-broadcast">signed, not broadcast</Badge>
+                    )}
+                  </>
                 ) : (
                   "none"
                 )}
@@ -215,6 +222,18 @@ export function PaymentDetail({ p }: { p: Payment }) {
                   <dd data-testid="wallet-op">
                     {op.needsOperator ? "Requires operator review" : WALLET_OP_COPY[op.state]} · attempt {op.attempt}
                   </dd>
+                  {op.phase && (
+                    <>
+                      <dt className="text-zinc-500">Operator phase</dt>
+                      <dd data-testid="wallet-op-phase">{WALLET_PHASE_COPY[op.phase]}</dd>
+                    </>
+                  )}
+                  {op.feeZat && (
+                    <>
+                      <dt className="text-zinc-500">Network fee</dt>
+                      <dd><Zec zat={op.feeZat} /> <span className="text-xs text-zinc-500">operator-approved, outside the policy budget</span></dd>
+                    </>
+                  )}
                   {op.lastReconciledAt && (
                     <>
                       <dt className="text-zinc-500">Last reconciled</dt>
@@ -226,7 +245,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
                 </>
               )}
             </dl>
-            {sentAlready && (
+            {sentAlready && !awaitingOperatorConfirmation(op) && (
               <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
                 <CircleDot size={12} aria-hidden /> Broadcast or in flight: pausing the agent or changing policy does not affect this payment.
               </p>

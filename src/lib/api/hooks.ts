@@ -198,6 +198,7 @@ const ERROR_COPY = {
   WALLET_UNAVAILABLE: "The wallet is temporarily unavailable. Check this payment's status before trying again.",
   INTERNAL: "The service could not complete this action. Check the latest status before trying again.",
   OUTCOME_UNKNOWN: "The payment outcome is still being checked. Do not resend it.",
+  VERIFICATION_UNAVAILABLE: "Receipt verification is not available for this payment yet. Nothing has been acknowledged.",
   CSRF_FAILED: "Your session could not be verified. Reload the page before trying again.",
   AMOUNT_MISMATCH: "The received amount does not match this invoice. Review the receipt before acknowledging it.",
 } as const;

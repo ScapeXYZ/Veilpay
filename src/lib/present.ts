@@ -57,6 +57,14 @@ export const WALLET_OP_COPY: Record<NonNullable<WalletOperation>["state"], strin
   unknown: "Unknown",
 };
 
+export const WALLET_PHASE_COPY: Record<NonNullable<NonNullable<WalletOperation>["phase"]>, string> = {
+  awaiting_operator: "Staged, waiting for the operator",
+  preparing: "Operator is preparing the transaction",
+  prepared: "Signed offline, not broadcast",
+  submitting: "Operator is submitting, outcome not known yet",
+  observing: "Submitted, watching wallet and chain",
+};
+
 export const PROVISIONAL_RECONCILIATION =
   "Reconciliation is provisional: it is not yet validated against the real Zcash wallet's history and recovery.";
 
@@ -66,7 +74,16 @@ export const PROVISIONAL_RECONCILIATION =
  * - reconciling: OUTCOME_UNKNOWN (or a pending/unknown wallet op) without needsOperator -> "Being reconciled"
  * Both are shown as NOT failed and NOT paid, and never offer a resend.
  */
-export type Unresolved = { kind: "operator" | "reconciling"; title: string; body: string } | null;
+export type Unresolved = { kind: "operator" | "awaiting-operator" | "reconciling"; title: string; body: string } | null;
+
+/** Manual testnet phases before the chain can show anything: a txid in phase=prepared is signed, NOT broadcast. */
+const PRE_BROADCAST_PHASES = new Set(["awaiting_operator", "preparing", "prepared", "submitting"]);
+
+export function awaitingOperatorConfirmation(op: WalletOperation | undefined | null): boolean {
+  if (!op) return false;
+  if (op.phase) return PRE_BROADCAST_PHASES.has(op.phase);
+  return op.requiresOperatorConfirmation === true;
+}
 
 export function unresolvedOf(p: Payment): Unresolved {
   const op = p.walletOperation ?? null;
@@ -75,6 +92,13 @@ export function unresolvedOf(p: Payment): Unresolved {
       kind: "operator",
       title: "Requires operator review",
       body: "The backend could not determine whether this send happened. It is not marked failed and it will never be resent automatically. An operator will resolve it from the wallet history.",
+    };
+  }
+  if (awaitingOperatorConfirmation(op)) {
+    return {
+      kind: "awaiting-operator",
+      title: "Awaiting operator confirmation",
+      body: "Execute only staged this payment. Signing and broadcast need separate confirmations in the operator terminal; this app never sends it. It is not paid, not failed, never resent, and the amount stays reserved.",
     };
   }
   const unknown = p.failure?.code === "OUTCOME_UNKNOWN" || op?.state === "unknown" || op?.state === "pending";
@@ -92,6 +116,7 @@ export function unresolvedOf(p: Payment): Unresolved {
 export function paymentBadge(p: Payment): { label: string; tone: Tone } {
   const u = unresolvedOf(p);
   if (u?.kind === "operator") return { label: "Requires operator review", tone: "review" };
+  if (u?.kind === "awaiting-operator") return { label: "Awaiting operator", tone: "review" };
   if (u?.kind === "reconciling") return { label: "Submitted, outcome unknown", tone: "warning" };
   return STATUS_COPY[p.status];
 }
@@ -108,6 +133,10 @@ export function timelineTitle(e: TimelineEvent): string {
       return `Agent paused: ${STATUS_COPY[e.status].label.toLowerCase()}`;
     case "late_receipt":
       return `${STATUS_COPY[e.status].label} (late receipt)`;
+    case "verification":
+      return `Merchant verification: ${STATUS_COPY[e.status].label.toLowerCase()}`;
+    case "wallet":
+      return `Wallet event: ${STATUS_COPY[e.status].label.toLowerCase()}`;
     default:
       return STATUS_COPY[e.status].label;
   }
@@ -120,6 +149,10 @@ export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone:
   late: { label: "Received late", tone: "warning", help: "A receipt arrived after the invoice expired." },
   amount_mismatch: { label: "Amount mismatch", tone: "danger", help: "The received amount does not equal the invoice amount." },
   expired: { label: "Invoice expired", tone: "neutral", help: "The invoice expired with no receipt." },
+  underpaid: { label: "Underpaid", tone: "danger", help: "Less than the invoice amount arrived. Cannot be acknowledged." },
+  duplicate: { label: "Duplicate receipt", tone: "danger", help: "More than one matching receipt was seen. Cannot be acknowledged until resolved." },
+  conflicting: { label: "Conflicting receipts", tone: "danger", help: "The merchant wallet saw observations that disagree. Cannot be acknowledged until resolved." },
+  reorged: { label: "Reorged", tone: "warning", help: "The receipt dropped out of the best chain. Not received until it is observed again at depth." },
 };
 
 /**
@@ -128,6 +161,9 @@ export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone:
  * Never on amount_mismatch. The backend enforces it again (409); this only decides whether to offer the button.
  */
 export function ackEligibility(v: Verification): { allowed: boolean; reason: string } {
+  // The backend's own current-observation verdict can only narrow eligibility, never widen it.
+  if (v.acknowledgmentEligible === false && (v.state === "received" || v.state === "late"))
+    return { allowed: false, reason: "The backend says the current observation is not sufficient for a merchant statement." };
   if (v.state === "received") return { allowed: true, reason: "Receipt verified." };
   if (v.state === "amount_mismatch") return { allowed: false, reason: "Amount mismatch: cannot be acknowledged." };
   if (v.state === "late") {

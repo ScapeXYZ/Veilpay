@@ -35,6 +35,16 @@ export function HealthStrip() {
           </span>
         </div>
       )}
+      {h.wallet === "operator_required" && (
+        <div data-testid="operator-required-strip" className="rounded-xl border border-violet-900 bg-violet-950/30 px-4 py-2 text-xs text-violet-200">
+          Manual testnet mode: staged payments wait for operator confirmation in a separate terminal. This app never signs or broadcasts.
+        </div>
+      )}
+      {h.chainWatcher.supported === false && (
+        <div data-testid="no-header-watcher" className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2 text-xs text-zinc-400">
+          No independent chain header watcher: reorg information comes from wallet observations only.
+        </div>
+      )}
       {h.reconciler.unresolved > 0 && (
         <div data-testid="reconciler-strip" className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-900 bg-amber-950/30 px-4 py-2 text-xs text-amber-200">
           <span>

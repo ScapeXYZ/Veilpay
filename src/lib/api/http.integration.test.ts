@@ -159,12 +159,24 @@ describe.skipIf(!enabled)("HTTP integration (native sockets; explicit backend op
     expect(fetched.id).toBe(invoice.id);
     expect(fetched.reference).toBe(invoice.reference);
     expect(transport.exchanges.at(-1)!.path).toBe(`${new URL(base).pathname.replace(/\/$/, "")}/merchant/invoices/${invoice.id}`);
-    if (fetched.paymentPayload) {
+    if (fetched.paymentPayload?.format === "zip321") {
+      // Real Milestone 3 testnet invoice: the backend's utest1 receiver must pass full UA decoding.
+      expect(fetched.paymentPayload).toMatchObject({ network: "testnet", mock: false, spendable: true });
+      expect(invoicePaymentUri(fetched, false)).toBe(fetched.paymentPayload.uri);
+    } else if (fetched.paymentPayload) {
       expect(fetched.paymentPayload).toMatchObject({ format: "veilpay-mock-v1", mock: true, spendable: false });
       expect(fetched.paymentPayload.uri).not.toMatch(/^zcash:/i);
       expect(invoicePaymentUri(fetched, false)).toBeNull();
     }
     if (health.mode === "mock") expect(invoicePaymentUri(fetched, true)).toBeNull();
+  });
+
+  it.skipIf(!selfMode)("Milestone 3 zip321 invoice parses over HTTP and yields a QR only after full validation (stand-in fixture)", async () => {
+    const fetched = S.Invoice.parse(await client.getInvoice("inv_m3testnet00001"));
+    expect(fetched.paymentPayload?.format).toBe("zip321");
+    expect(invoicePaymentUri(fetched, false)).toBe(fetched.paymentPayload!.uri);
+    expect(invoicePaymentUri(fetched, true)).toBeNull();
+    expect(invoicePaymentUri({ ...fetched, amountZat: "12345679" }, false)).toBeNull();
   });
 
   it("maps real HTTP 404 and wrong-role responses to human-readable copy, not success", async () => {

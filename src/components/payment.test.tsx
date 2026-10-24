@@ -53,6 +53,17 @@ describe("PaymentDetail", () => {
     expect(within(screen.getByTestId("send-record")).queryByText("Paid", { exact: true })).toBeNull();
   });
 
+  it("staged manual testnet payment: awaiting operator, signed txid marked not broadcast, no execute/resend", () => {
+    const base = seed("pay_reconcile0001");
+    renderDetail({ ...base, status: "submitted", failure: null, mockRef: null, txid: "ab".repeat(32), walletOperation: { ...base.walletOperation!, state: "pending", needsOperator: false, requiresOperatorConfirmation: true, phase: "prepared", feeZat: "10000" } });
+    expect(screen.getByTestId("unresolved-awaiting-operator")).toHaveTextContent("Awaiting operator confirmation");
+    expect(screen.getByTestId("txid-not-broadcast")).toHaveTextContent("signed, not broadcast");
+    expect(screen.getByTestId("wallet-op-phase")).toHaveTextContent("Signed offline, not broadcast");
+    expect(screen.queryByTestId("execute")).toBeNull();
+    expect(screen.queryByRole("button", { name: /resend|retry|execute|pay/i })).toBeNull();
+    expect(screen.queryByText(/Broadcast or in flight/)).toBeNull();
+  });
+
   it("operator review overrides authorized and disables execution", () => {
     renderDetail({ ...seed("pay_operator00001"), status: "authorized" });
     expect(screen.getByTestId("unresolved-operator")).toBeInTheDocument();
