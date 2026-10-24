@@ -235,7 +235,7 @@ export function statusLabel(status: PaymentStatus, simulated: boolean): string {
 export function confirmationsText(n: number | null | undefined, required: number | null | undefined, simulated: boolean): string {
   const c = n ?? 0;
   const base = required != null ? `${c} of ${required}` : `${c}`;
-  return simulated ? `${base} simulated confirmation${(required ?? c) === 1 ? "" : "s"}` : base;
+  return simulated ? `${base} simulated confirmation${c === 1 ? "" : "s"}` : base;
 }
 
 const SENT_STATUSES: PaymentStatus[] = ["submitted", "confirming", "confirmed"];

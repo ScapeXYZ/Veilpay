@@ -124,6 +124,7 @@ describe("4. Confirmations are labelled simulated", () => {
     expect(confirmationsText(1, 1, true)).toBe("1 of 1 simulated confirmation");
     expect(confirmationsText(2, 3, false)).toBe("2 of 3");
     expect(confirmationsText(null, null, true)).toBe("0 simulated confirmations");
+    expect(confirmationsText(3, 1, true)).toBe("3 of 1 simulated confirmations");
   });
   it("payment details show simulated confirmations in practice mode", () => {
     renderDetail(seed("pay_confirmed0001"));
