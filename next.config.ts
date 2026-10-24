@@ -16,6 +16,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // TypeScript 5 provides the compiler API. Avoid Next's default detached CLI
+  // child process, whose captured stdout is unavailable in restricted runners.
+  experimental: { useTypeScriptCli: false },
   turbopack: { root: import.meta.dirname },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
