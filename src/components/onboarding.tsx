@@ -120,7 +120,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         <OnboardingPanel
           step={step}
           hideForever={snap.stored === "hidden"}
-          onHideForever={(v) => write("local", ONBOARDING_STORAGE_KEY, v ? "hidden" : null)}
+          onHideForever={(v) => {
+            // Pin the tour open first: storing "hidden" ends auto-eligibility, which must not close the panel mid-step.
+            setActive(true);
+            write("local", ONBOARDING_STORAGE_KEY, v ? "hidden" : null);
+          }}
           onBack={() => go(Math.max(0, step - 1))}
           onNext={() => (step < ONBOARDING_STEPS.length - 1 ? go(step + 1) : close("finish"))}
           onSkip={() => close("skip")}

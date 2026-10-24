@@ -95,11 +95,11 @@ function Invoices() {
           <tbody>
             {items.map((i) => (
               <tr key={i.id} className="border-b border-zinc-800/70 last:border-0">
-                <td className="py-2 pr-2">
+                <td className="py-2 pr-2 [overflow-wrap:anywhere]">
                   <div className="text-zinc-200">{i.reference}</div>
                   <div className="font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
-                <td className="py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
+                <td className="whitespace-nowrap py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
                 <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "paid late" : i.status}</Badge></td>
               </tr>
             ))}

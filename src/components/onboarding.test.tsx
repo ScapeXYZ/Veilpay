@@ -72,6 +72,11 @@ describe("first-time onboarding", () => {
     const { unmount } = mount();
     fireEvent.click(screen.getByTestId("onboarding-hide"));
     expect(readUiPref("local", ONBOARDING_STORAGE_KEY)).toBe("hidden");
+    // Ticking the box must not close the tour under the user's cursor.
+    expect(screen.getByTestId("onboarding-hide")).toBeChecked();
+    fireEvent.click(screen.getByTestId("onboarding-hide"));
+    expect(readUiPref("local", ONBOARDING_STORAGE_KEY)).toBeNull();
+    fireEvent.click(screen.getByTestId("onboarding-hide"));
     unmount();
     window.sessionStorage.clear();
     mount();

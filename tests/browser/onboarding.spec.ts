@@ -40,7 +40,7 @@ test("Next and Back walk Spending rules, Payments, Merchant, Activity and Privac
   await page.getByTestId("onboarding-next").click(); // Finish
   await expect(tour(page)).toHaveCount(0);
   await page.goto("/app");
-  await expect(page.getByTestId("primary-action")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
   await expect(tour(page)).toHaveCount(0);
 });
 
@@ -54,8 +54,10 @@ test("Skip closes the tour without navigating", async ({ page }) => {
 test("keyboard only: Tab reaches the controls, Enter advances, Escape closes", async ({ page }) => {
   await page.goto("/app");
   await expect(page.getByRole("heading", { name: "Welcome to VeilPay" })).toBeFocused();
-  // Tab order inside the panel: close, don't-show-again, skip, back (disabled, skipped), next.
+  // Focus starts on the step heading. Tab order after it: don't-show-again, skip, back (disabled, skipped), next.
   await page.keyboard.press("Tab");
+  await expect(page.getByTestId("onboarding-hide")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
   await expect(tour(page).getByRole("button", { name: "Close the tour" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByTestId("onboarding-hide")).toBeFocused();
@@ -75,12 +77,12 @@ test("Don't show again persists across reloads and new sessions, and Help & demo
   await page.getByTestId("onboarding-hide").check();
   await page.getByTestId("onboarding-skip").click();
   await page.reload();
-  await expect(page.getByTestId("primary-action")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
   await expect(tour(page)).toHaveCount(0);
 
   const fresh = await context.newPage(); // new tab = new sessionStorage, same localStorage
   await fresh.goto("/app");
-  await expect(fresh.getByTestId("primary-action")).toBeVisible();
+  await expect(fresh.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
   await expect(tour(fresh)).toHaveCount(0);
   await fresh.close();
 
@@ -92,12 +94,25 @@ test("Don't show again persists across reloads and new sessions, and Help & demo
   await expect(page.getByTestId("onboarding-hide")).toBeChecked();
 });
 
+test("reviewed pages never scroll sideways (long ids and notes wrap on mobile)", async ({ page }) => {
+  for (const path of ["/", "/app", "/app/spending-rules", "/app/payments", "/app/merchant", "/app/activity", "/app/privacy", "/app/help", "/demo"]) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    // Compare with the configured viewport: on mobile emulation innerWidth itself grows with the overflow.
+    const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
+    expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(0);
+  }
+});
+
 test("copy: interactive demo naming and simulation qualifiers are present", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("cta-demo")).toHaveText(/try interactive demo/i);
   await expect(page.getByTestId("landing-demo-note")).toContainText(/simulated/i);
   await expect(page.getByText(/watch the 2-minute demo/i)).toHaveCount(0);
-  await page.goto("/app");
-  await page.getByTestId("onboarding-skip").click();
-  await expect(page.getByTestId("primary-action")).toHaveText(/try interactive demo/i);
+  await page.goto("/app/help");
+  await expect(page.getByTestId("help-start-demo")).toHaveText(/try interactive demo/i);
+  await expect(page.getByText(/watch the 2-minute demo/i)).toHaveCount(0);
+  await page.goto("/app/merchant");
+  await expect(page.getByRole("heading", { name: "Merchant portal" })).toBeVisible();
+  await expect(page.getByText(/receipts and confirmations are simulated/i)).toBeVisible();
 });

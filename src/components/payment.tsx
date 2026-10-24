@@ -54,7 +54,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
             <li key={i} className="rounded-lg bg-zinc-950/60 px-3 py-2 text-sm" data-testid={`violation-${v.code}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-zinc-100">{VIOLATION_COPY[v.code]}</span>
-                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80" title="Error code">{v.code}</code>
+                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80 [overflow-wrap:anywhere]" title="Error code">{v.code}</code>
               </div>
               {!compact && <p className="mt-1 text-xs text-zinc-400">{v.message}</p>}
               {(v.limitZat || v.requestedZat) && (
@@ -75,7 +75,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           ))}
         </ul>
       )}
-      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
+      {!compact && <p className="mt-3 text-xs text-zinc-500 [overflow-wrap:anywhere]">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
     </div>
   );
 }
@@ -188,7 +188,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
       <FailureNotice p={p} />
       <ExecuteBlock p={p} />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card title="Payment timeline" className="!bg-zinc-950/40">
           <Timeline p={p} />
           {["submitted", "confirming", "confirmed"].includes(p.status) && !unresolvedOf(p) && (
@@ -209,10 +209,11 @@ export function PaymentDetail({ p }: { p: Payment }) {
               <dt className="text-zinc-500">Privacy</dt>
               <dd>{!p.pool ? (sentAlready ? "Not reported by the server" : "Not sent yet") : simulated ? `Simulated ${p.pool} pool send, nothing real moved` : `${p.pool} pool, as reported by VeilPay`}</dd>
               <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
-              <dd className="truncate font-mono text-xs" data-testid="tx-ref">
+              <dd className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]" data-testid="tx-ref">
                 {p.mockRef ? (
                   <>
-                    {p.mockRef} <Badge tone="neutral" className="ml-1">practice only, not a txid or a real transaction</Badge>
+                    {p.mockRef}
+                    <span className="mt-0.5 block font-sans text-zinc-500">Practice only, not a txid or a real transaction.</span>
                   </>
                 ) : p.txid ? (
                   <>
