@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/*
+ * VeilPay design tokens (Phase 1). Charcoal surfaces, quiet borders, one ice-cyan accent for
+ * selection / focus / primary intent. Green, amber and red keep narrow semantic roles and are
+ * always paired with text + icon. The zinc scale is re-tuned so every existing surface picks up
+ * the new palette without per-component churn.
+ */
+@theme {
+  --color-zinc-50: #f4f7f8;
+  --color-zinc-100: #e6ecee;
+  --color-zinc-200: #cdd6da;
+  --color-zinc-300: #b8c4ca;
+  --color-zinc-400: #a5b2b9;
+  --color-zinc-500: #8d9ba2;
+  --color-zinc-600: #66757c;
+  --color-zinc-700: #2e3c43;
+  --color-zinc-800: #1b272d;
+  --color-zinc-900: #131b1f;
+  --color-zinc-950: #0b1012;
+
+  --color-accent-200: #c4f2f7;
+  --color-accent-300: #a2e8f0;
+  --color-accent-400: #78dce8;
+  --color-accent-500: #4fc5d4;
+  --color-accent-900: #123a41;
+  --color-accent-950: #0b2429;
+
+  --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b1012;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Money and heights never jitter. */
+.tabular,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid #78dce8;
+  outline-offset: 3px;
+}
+::selection {
+  background: #78dce8;
+  color: #0b1012;
+}
+
+/* Subtle abstract privacy veil, landing hero only. */
+.veil {
+  background:
+    radial-gradient(60% 80% at 85% 10%, rgb(120 220 232 / 0.10), transparent 60%),
+    radial-gradient(50% 60% at 0% 100%, rgb(120 220 232 / 0.05), transparent 60%);
+}
+
+* {
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

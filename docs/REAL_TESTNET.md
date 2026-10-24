@@ -1,5 +1,9 @@
 # VeilPay public-testnet integration
 
+Current transport and manual operator procedure: [Milestone 3](MILESTONE3_TESTNET.md).
+The historical observations below predate the structured-output patch. Do not use
+old provisioning/funding examples as part of Milestone 3 review.
+
 Working baseline: `e0c6402`. Deadline: 2026-10-28. OpenAPI remains v1.1.
 
 ## Compatibility decision, checked 2026-10-23

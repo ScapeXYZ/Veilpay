@@ -2,6 +2,7 @@
 name = "veilpay-backend"
 version = "0.1.0"
 edition = "2024"
+default-run = "veilpay-backend"
 
 [dependencies]
 axum = "0.8"
@@ -16,4 +17,5 @@ hmac = "0.12"
 tower-http = { version = "0.6", features = ["cors"] }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
