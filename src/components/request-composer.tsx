@@ -5,8 +5,9 @@ import { useApi, useRequestPayment, useSession, errorText } from "@/lib/api/hook
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Payment } from "@/lib/contract/schemas";
 import { parseZecInput } from "@/lib/zat";
-import { useHandoff } from "@/app/providers";
-import { Button, ErrorBox, Field, inputCls } from "./ui";
+import { useHandoff } from "@/lib/handoff";
+import { Button, ErrorBox, Field } from "./ui";
+import { inputCls } from "@/lib/styles";
 
 export type RequestPreset = { invoiceId: string; zec: string; reference: string };
 

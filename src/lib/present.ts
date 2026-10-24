@@ -190,7 +190,15 @@ export function shortId(id: string): string {
   return id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * "24 Oct, 09:05 UTC". Built from UTC fields, not toLocaleString: Node and each browser ship
+ * different ICU data, so Intl output can differ between the server render and hydration.
+ */
 export function fmtTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+  if (Number.isNaN(d.getTime())) return "unknown time";
+  return `${pad2(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
 }

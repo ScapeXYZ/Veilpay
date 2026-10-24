@@ -1,15 +1,10 @@
 "use client";
 
 import { FlaskConical, Radio, ShieldQuestion } from "lucide-react";
-import { useApi, useHealth } from "@/lib/api/hooks";
-import { dataSourceOf, type DataSource } from "@/lib/present";
+import { useHealth } from "@/lib/api/hooks";
+import { useDataSource } from "@/lib/api/data-source";
+import type { DataSource } from "@/lib/present";
 import { Badge } from "./ui";
-
-export function useDataSource(): DataSource {
-  const api = useApi();
-  const { data } = useHealth();
-  return dataSourceOf(data, api.mode);
-}
 
 /** Persistent banner: contract MOCK MODE rule ("UI shows a persistent MOCK banner"). Never dismissible. */
 export function MockBanner() {

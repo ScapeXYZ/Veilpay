@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Invoice } from "@/lib/contract/schemas";
 import { isSaplingTestnetAddress } from "@/lib/zcash-address";
-import { InvoiceRequest, invoicePaymentUri } from "./invoice-request";
+import { InvoiceRequest } from "./invoice-request";
+import { invoicePaymentUri } from "@/lib/payment-uri";
 
 // Public 43-byte Sapling receiver from causeway-sapling docs, re-encoded for testnet.
 // Encoding vector only: never fund this address; no wallet control is claimed.

@@ -12,6 +12,8 @@ type Method = "GET" | "POST" | "PUT" | "PATCH";
 export class LiveApiClient implements ApiClient {
   readonly mode = "live" as const;
   private csrfToken: string | null = null;
+  /** Single-flight GET /session for the CSRF path: concurrent state changes share one lookup. */
+  private sessionLookup: Promise<S.Session> | null = null;
 
   constructor(private readonly base: string = process.env.NEXT_PUBLIC_API_BASE || "/api") {}
 
@@ -24,7 +26,7 @@ export class LiveApiClient implements ApiClient {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     if (opts.csrf) {
-      if (!this.csrfToken) await this.getSession();
+      if (!this.csrfToken) await this.lookupSessionOnce();
       if (this.csrfToken) headers["X-CSRF-Token"] = this.csrfToken;
     }
     if (opts.idempotencyKey) headers["Idempotency-Key"] = S.IdempotencyKeyHeader.parse(opts.idempotencyKey);
@@ -37,7 +39,23 @@ export class LiveApiClient implements ApiClient {
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     });
     const text = await res.text();
-    const json: unknown = text ? JSON.parse(text) : {};
+    // Never JSON.parse blindly: a proxy/dev-server error page ("Internal Server Error", HTML) would
+    // surface as a raw SyntaxError instead of a typed ApiError (seen in `next dev` while the backend restarts).
+    let json: unknown = {};
+    let malformed = false;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        malformed = true;
+      }
+    }
+    if (malformed) {
+      throw new ApiError(res.status >= 400 ? res.status : 502, {
+        code: "INTERNAL",
+        message: `Unexpected non-JSON ${res.status} response from backend.`,
+      });
+    }
     if (!res.ok) {
       const parsed = S.ApiErrorBody.safeParse(json);
       throw new ApiError(
@@ -63,6 +81,13 @@ export class LiveApiClient implements ApiClient {
     const s = await this.call(S.Session, "GET", "/session");
     this.csrfToken = s.csrfToken;
     return s;
+  }
+
+  private lookupSessionOnce(): Promise<S.Session> {
+    this.sessionLookup ??= this.getSession().finally(() => {
+      this.sessionLookup = null;
+    });
+    return this.sessionLookup;
   }
 
   createAgent(body: { name: string; policy: S.PolicyRules }, idempotencyKey: string) {

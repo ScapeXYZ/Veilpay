@@ -3,9 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
 import type { InvoiceCreate, PaymentRequestCreate, PolicyUpdate, SessionContext } from "@/lib/contract/schemas";
+import { hmrSingleton } from "@/lib/hmr-singleton";
 import { ApiError, newIdempotencyKey, type ApiClient } from "./types";
 
-export const ApiContext = createContext<ApiClient | null>(null);
+/** Stable across Fast Refresh: a re-evaluated hooks.ts must not orphan the mounted provider. */
+export const ApiContext = hmrSingleton("ApiContext", () => createContext<ApiClient | null>(null));
 
 export function useApi(): ApiClient {
   const c = useContext(ApiContext);
@@ -47,6 +49,16 @@ export function useSession() {
   });
 }
 
+/**
+ * Session readiness gate. Every session-scoped query waits for it, so a cold load never sends
+ * GET /payments, /agents or /merchant/invoices before the demo session cookie exists (those
+ * raced the bootstrap and came back 401 UNAUTHENTICATED in dev). The session query itself is
+ * deduplicated by React Query, so StrictMode double-mounts still bootstrap exactly once.
+ */
+export function useSessionReady(): boolean {
+  return useSession().isSuccess;
+}
+
 export function useSwitchContext() {
   const api = useApi();
   const qc = useQueryClient();
@@ -61,45 +73,51 @@ export function useSwitchContext() {
 
 export function useAgent(agentId: string | null | undefined, enabled = true) {
   const api = useApi();
+  const ready = useSessionReady();
   return useQuery({
     queryKey: qk.agent(agentId ?? ""),
     queryFn: () => api.getAgent(agentId!),
-    enabled: !!agentId && enabled,
+    enabled: ready && !!agentId && enabled,
     refetchInterval: POLL_MS,
   });
 }
 
 export function usePayments(enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: qk.payments, queryFn: () => api.listPayments({ limit: 50 }), enabled, refetchInterval: POLL_MS });
+  const ready = useSessionReady();
+  return useQuery({ queryKey: qk.payments, queryFn: () => api.listPayments({ limit: 50 }), enabled: ready && enabled, refetchInterval: POLL_MS });
 }
 
 export function usePayment(id: string | null, enabled = true) {
   const api = useApi();
+  const ready = useSessionReady();
   return useQuery({
     queryKey: qk.payment(id ?? ""),
     queryFn: () => api.getPayment(id!),
-    enabled: !!id && enabled,
+    enabled: ready && !!id && enabled,
     refetchInterval: POLL_MS,
   });
 }
 
 export function useInvoice(id: string | null) {
   const api = useApi();
-  return useQuery({ queryKey: ["invoice", id], queryFn: () => api.getInvoice(id!), enabled: !!id, refetchInterval: POLL_MS, retry: false });
+  const ready = useSessionReady();
+  return useQuery({ queryKey: ["invoice", id], queryFn: () => api.getInvoice(id!), enabled: ready && !!id, refetchInterval: POLL_MS, retry: false });
 }
 
 export function useInvoices(enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: qk.invoices, queryFn: () => api.listInvoices(), enabled, refetchInterval: POLL_MS });
+  const ready = useSessionReady();
+  return useQuery({ queryKey: qk.invoices, queryFn: () => api.listInvoices(), enabled: ready && enabled, refetchInterval: POLL_MS });
 }
 
 export function useVerification(paymentId: string | null, enabled = true) {
   const api = useApi();
+  const ready = useSessionReady();
   return useQuery({
     queryKey: qk.verification(paymentId ?? ""),
     queryFn: () => api.getVerification(paymentId!),
-    enabled: !!paymentId && enabled,
+    enabled: ready && !!paymentId && enabled,
     refetchInterval: POLL_MS,
     retry: false,
   });
@@ -127,8 +145,11 @@ export function useRequestPayment() {
   });
 }
 
-const executeKeys = new Map<string, string>();
-/** One Idempotency-Key per payment execute. A retry after 503 reuses it, so it can never cause a second send. */
+/**
+ * One Idempotency-Key per payment execute. A retry after 503 reuses it, so it can never cause a second send.
+ * HMR-stable: a Fast Refresh of this module must not forget keys and mint a fresh one for a retry.
+ */
+const executeKeys = hmrSingleton("executeKeys", () => new Map<string, string>());
 export function executeKeyFor(paymentId: string): string {
   let k = executeKeys.get(paymentId);
   if (!k) {

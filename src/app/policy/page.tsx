@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { AgentSummary } from "@/components/agent-summary";
 import { PageHeader, RequireContext } from "@/components/shell";
-import { Button, Card, ErrorBox, Field, Notice, inputCls } from "@/components/ui";
+import { Button, Card, ErrorBox, Field, Notice } from "@/components/ui";
+import { inputCls } from "@/lib/styles";
 import { errorText, useAgent, usePutPolicy, useSession } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/types";
 import type { Agent } from "@/lib/contract/schemas";

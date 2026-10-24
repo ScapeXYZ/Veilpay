@@ -4,15 +4,17 @@ import { BadgeCheck, KeyRound, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader, RequireContext } from "@/components/shell";
-import { SourceTag, useDataSource } from "@/components/source";
-import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec, inputCls } from "@/components/ui";
+import { SourceTag } from "@/components/source";
+import { useDataSource } from "@/lib/api/data-source";
+import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec } from "@/components/ui";
+import { inputCls } from "@/lib/styles";
 import { isMockClient } from "@/lib/api";
 import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Acknowledgment } from "@/lib/contract/schemas";
 import { VERIFICATION_COPY, ackEligibility, fmtTime } from "@/lib/present";
 import { parseZecInput } from "@/lib/zat";
-import { useHandoff } from "@/app/providers";
+import { useHandoff } from "@/lib/handoff";
 import { InvoiceRequest } from "@/components/invoice-request";
 
 function VerificationCard({ paymentId }: { paymentId: string }) {

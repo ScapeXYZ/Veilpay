@@ -16,7 +16,7 @@ import { ApiContext, errorText, qk } from "./hooks";
 import * as S from "@/lib/contract/schemas";
 import { paymentBadge, unresolvedOf } from "@/lib/present";
 import { PaymentDetail } from "@/components/payment";
-import { invoicePaymentUri } from "@/components/invoice-request";
+import { invoicePaymentUri } from "@/lib/payment-uri";
 import { startContractServer } from "./__integration__/contract-server";
 
 const selfMode = process.env.INTEGRATION_SELF === "1";
