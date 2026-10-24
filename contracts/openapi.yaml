@@ -644,7 +644,7 @@ paths:
     post:
       tags:
       - merchant
-      summary: Create an invoice; backend derives a fresh merchant receiving address
+      summary: Create a merchant invoice with an explicitly non-spendable mock receiver
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - $ref: '#/components/parameters/CsrfToken'
@@ -660,13 +660,17 @@ paths:
               properties:
                 reference:
                   type: string
+                  minLength: 1
                   maxLength: 64
                   example: INV-1001
                 amountZat:
-                  $ref: '#/components/schemas/Zatoshi'
+                  allOf:
+                  - $ref: '#/components/schemas/Zatoshi'
+                  description: Canonical integer string in zatoshis, from 1 through 2100000000000000.
                 expiresAt:
                   type: string
                   format: date-time
+                  description: Must be in the future. Defaults to 24 hours after creation.
       responses:
         '201':
           description: created
@@ -674,6 +678,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Invoice'
+        '400':
+          description: Invalid reference, amount, expiry, or idempotency key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           $ref: '#/components/responses/Forbidden'
         '401':
@@ -707,6 +717,32 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '401':
           $ref: '#/components/responses/Unauthorized'
+      x-role: merchant
+      security:
+      - session: []
+  /merchant/invoices/{id}:
+    get:
+      tags: [merchant]
+      summary: Read an owned invoice and refresh its expiry status
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Invoice; open invoices past expiry become expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Invoice missing or owned by another merchant
       x-role: merchant
       security:
       - session: []
@@ -1254,8 +1290,24 @@ components:
           $ref: '#/components/schemas/Zatoshi'
         payTo:
           type: string
-          description: Fresh merchant shielded receiving address for this invoice. Returned to the paying agent
-            flow only, never in URLs.
+          description: Unique mock-only receiver in the current backend; not a Zcash address.
+        paymentPayload:
+          type: object
+          description: QR-ready mock payload. Never pass to a Zcash wallet. Legacy invoices may omit this field.
+          required: [format, uri, mock, spendable]
+          properties:
+            format:
+              type: string
+              const: veilpay-mock-v1
+            uri:
+              type: string
+              description: 'veilpay-mock:{invoiceId}?amountZat={exact integer amount}'
+            mock:
+              type: boolean
+              const: true
+            spendable:
+              type: boolean
+              const: false
         status:
           type: string
           enum:

@@ -70,6 +70,8 @@ fn reply(status: u16, body: &Value, replay: bool) -> Response {
         body.to_string(),
     )
         .into_response();
+    r.headers_mut()
+        .insert("cache-control", "no-store".parse().unwrap());
     if replay {
         r.headers_mut()
             .insert("Idempotent-Replay", "true".parse().unwrap());
@@ -492,6 +494,27 @@ async fn expire(c: &mut SqliteConnection) -> Result<()> {
     }
     Ok(())
 }
+async fn expire_invoice(c: &mut SqliteConnection, owner: &str, invoice: &mut Value) -> Result<()> {
+    if invoice["status"] == "open"
+        && invoice
+            .get("expiresAt")
+            .and_then(Value::as_str)
+            .map(date)
+            .transpose()?
+            .is_some_and(|expiry| expiry <= Utc::now())
+    {
+        invoice["status"] = json!("expired");
+        put(
+            c,
+            "invoice",
+            invoice["id"].as_str().unwrap(),
+            owner,
+            invoice,
+        )
+        .await?;
+    }
+    Ok(())
+}
 async fn perform(
     c: &mut SqliteConnection,
     p: &[&str],
@@ -549,31 +572,40 @@ async fn perform(
             Ok((200, pol))
         }
         ("POST", ["merchant", "invoices"]) => {
-            text(b, "reference", 64)?;
-            zat(b, "amountZat")?;
-            let mut i = json!({"id":id("inv"),"merchantId":owner,"reference":b["reference"],"amountZat":b["amountZat"],"payTo":format!("mock-only:NOT-A-ZCASH-ADDRESS:{}",id("recv")),"status":"open","createdAt":now()});
-            if let Some(e) = b.get("expiresAt") {
-                date(e.as_str().ok_or_else(invalid)?)?;
-                i["expiresAt"] = e.clone()
+            let reference = text(b, "reference", 64)?;
+            let amount = zat(b, "amountZat")?;
+            if reference.trim().is_empty() || !(1..=2_100_000_000_000_000).contains(&amount) {
+                return Err(invalid());
             }
+            let created = Utc::now();
+            let expires = match b.get("expiresAt") {
+                Some(e) => date(e.as_str().ok_or_else(invalid)?)?,
+                None => created + Duration::hours(24),
+            };
+            if expires <= created {
+                return Err(invalid());
+            }
+            let invoice_id = id("inv");
+            // Deliberately not a ZIP-321 URI: mock receivers must never reach a wallet.
+            let qr_payload = format!("veilpay-mock:{invoice_id}?amountZat={amount}");
+            let i = json!({"id":invoice_id,"merchantId":owner,"reference":reference,
+                "amountZat":amount.to_string(),"payTo":format!("mock-only:NOT-A-ZCASH-ADDRESS:{}",id("recv")),
+                "status":"open","createdAt":created.to_rfc3339(),"expiresAt":expires.to_rfc3339(),
+                "paymentPayload":{"format":"veilpay-mock-v1","uri":qr_payload,"mock":true,"spendable":false}});
             put(c, "invoice", i["id"].as_str().unwrap(), owner, &i).await?;
             Ok((201, i))
         }
         ("GET", ["merchant", "invoices"]) => {
             let mut items = list(c, "invoice", owner).await?;
             for i in &mut items {
-                if i["status"] == "open"
-                    && i.get("expiresAt")
-                        .and_then(Value::as_str)
-                        .map(date)
-                        .transpose()?
-                        .is_some_and(|d| d <= Utc::now())
-                {
-                    i["status"] = json!("expired");
-                    put(c, "invoice", i["id"].as_str().unwrap(), owner, i).await?
-                }
+                expire_invoice(c, owner, i).await?;
             }
             Ok((200, json!({"items":items})))
+        }
+        ("GET", ["merchant", "invoices", iid]) => {
+            let mut invoice = owned(c, "invoice", iid, owner).await?;
+            expire_invoice(c, owner, &mut invoice).await?;
+            Ok((200, invoice))
         }
         ("POST", ["payments", "request"]) => {
             let aid = text(b, "agentId", 64)?;

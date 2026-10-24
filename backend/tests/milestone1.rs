@@ -991,3 +991,157 @@ fn configuration_errors_remain_strings_and_fail_closed() {
         assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
     }
 }
+
+#[tokio::test]
+async fn invoice_amounts_expiry_and_mock_qr_are_exact() {
+    let f = Fixture::new().await;
+    for amount in [
+        json!(1),
+        json!(1.5),
+        json!("0"),
+        json!("01"),
+        json!("-1"),
+        json!("1.0"),
+        json!("2100000000000001"),
+    ] {
+        let r = call(
+            &f.router,
+            "POST",
+            "merchant/invoices",
+            Some(&f.merchant),
+            Some("invalid-invoice"),
+            json!({"reference":"invoice","amountZat":amount}),
+        )
+        .await;
+        assert_eq!(r.status, 400, "{amount}");
+    }
+    for extra in [
+        json!({"reference":" ","amountZat":"1"}),
+        json!({"reference":"invoice","amountZat":"1","expiresAt":"2000-01-01T00:00:00Z"}),
+        json!({"reference":"invoice","amountZat":"1","expiresAt":null}),
+    ] {
+        assert_eq!(
+            call(
+                &f.router,
+                "POST",
+                "merchant/invoices",
+                Some(&f.merchant),
+                Some("bad-expiration"),
+                extra
+            )
+            .await
+            .status,
+            400
+        );
+    }
+    for amount in ["1", "2100000000000000"] {
+        let i = f.invoice(amount).await;
+        assert_eq!(i["amountZat"], amount);
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(i["expiresAt"].as_str().unwrap()).unwrap()
+                > chrono::Utc::now()
+        );
+        assert_eq!(i["paymentPayload"]["spendable"], false);
+        assert_eq!(
+            i["paymentPayload"]["uri"],
+            format!(
+                "veilpay-mock:{}?amountZat={amount}",
+                i["id"].as_str().unwrap()
+            )
+        );
+    }
+}
+
+#[tokio::test]
+async fn invoice_detail_is_scoped_and_expiry_is_persisted() {
+    let f = Fixture::new().await;
+    let i = f.invoice("1").await;
+    let j = f.invoice("1").await;
+    assert_ne!(i["id"], j["id"]);
+    let path = format!("merchant/invoices/{}", i["id"].as_str().unwrap());
+    assert_eq!(
+        call(&f.router, "GET", &path, Some(&f.customer), None, json!({}))
+            .await
+            .status,
+        403
+    );
+    sqlx::query("UPDATE records SET body=json_set(body,'$.expiresAt','2000-01-01T00:00:00Z') WHERE kind='invoice' AND id=?").bind(i["id"].as_str().unwrap()).execute(&f.app.pool).await.unwrap();
+    assert_eq!(
+        call(&f.router, "GET", &path, Some(&f.merchant), None, json!({}))
+            .await
+            .body["status"],
+        "expired"
+    );
+    let stored: String = sqlx::query_scalar(
+        "SELECT json_extract(body,'$.status') FROM records WHERE kind='invoice' AND id=?",
+    )
+    .bind(i["id"].as_str().unwrap())
+    .fetch_one(&f.app.pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, "expired");
+    sqlx::query("UPDATE records SET owner='mer_other' WHERE kind='invoice' AND id=?")
+        .bind(i["id"].as_str().unwrap())
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&f.router, "GET", &path, Some(&f.merchant), None, json!({}))
+            .await
+            .status,
+        404
+    );
+    let listed = call(
+        &f.router,
+        "GET",
+        "merchant/invoices",
+        Some(&f.merchant),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(listed.body["items"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn concurrent_invoice_retries_create_one_invoice() {
+    let f = Fixture::new().await;
+    let body = json!({"reference":"retry","amountZat":"1"});
+    let (a, b) = tokio::join!(
+        call(
+            &f.router,
+            "POST",
+            "merchant/invoices",
+            Some(&f.merchant),
+            Some("concurrent-invoice"),
+            body.clone()
+        ),
+        call(
+            &f.router,
+            "POST",
+            "merchant/invoices",
+            Some(&f.merchant),
+            Some("concurrent-invoice"),
+            body.clone()
+        )
+    );
+    assert_eq!(a.status, 201);
+    assert_eq!(b.status, 201);
+    assert_eq!(a.raw, b.raw);
+    assert_ne!(a.replay, b.replay);
+    let mismatch = call(
+        &f.router,
+        "POST",
+        "merchant/invoices",
+        Some(&f.merchant),
+        Some("concurrent-invoice"),
+        json!({"reference":"retry","amountZat":"2"}),
+    )
+    .await;
+    assert_eq!(mismatch.status, 409);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM records WHERE kind='invoice'")
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
