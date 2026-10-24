@@ -38,10 +38,11 @@ export function cmpZat(a: string, b: string): -1 | 0 | 1 {
 }
 
 /** Format zatoshi as ZEC, trimming trailing zeros but keeping at least 2 decimals. */
-export function formatZec(zat: string, opts: { unit?: boolean } = {}): string {
+export function formatZec(zat: string, opts: { unit?: boolean; exact?: boolean } = {}): string {
   const v = toBig(zat);
   const whole = v / ZAT_PER_ZEC;
-  let frac = (v % ZAT_PER_ZEC).toString().padStart(8, "0").replace(/0+$/, "");
+  let frac = (v % ZAT_PER_ZEC).toString().padStart(8, "0");
+  if (!opts.exact) frac = frac.replace(/0+$/, "");
   if (frac.length < 2) frac = frac.padEnd(2, "0");
   const wholeStr = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${wholeStr}.${frac}${opts.unit === false ? "" : " ZEC"}`;
