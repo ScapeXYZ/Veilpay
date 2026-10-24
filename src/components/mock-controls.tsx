@@ -15,7 +15,7 @@ export function MockControlsPanel() {
   return (
     <div data-testid="mock-controls" className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-fuchsia-800 p-3 text-fuchsia-200">
       <FlaskConical size={14} aria-hidden />
-      <span className="mr-2 font-semibold uppercase tracking-wide">Mock scenario controls</span>
+      <span className="mr-2 font-semibold uppercase tracking-wide">Practice controls</span>
       <Button
         variant="secondary"
         onClick={() => {
@@ -23,7 +23,7 @@ export function MockControlsPanel() {
           qc.invalidateQueries();
         }}
       >
-        {h?.chainWatcher.deepReorgAlert ? "Clear" : "Raise"} deep-reorg alert
+        {h?.chainWatcher.deepReorgAlert ? "Clear" : "Raise"} network-correction alert
       </Button>
       <Button
         variant="secondary"
@@ -32,13 +32,13 @@ export function MockControlsPanel() {
           qc.invalidateQueries();
         }}
       >
-        Reset mock data
+        Reset practice data
       </Button>
     </div>
   );
 }
 
-export function MockAdvanceButton({ paymentId, label = "Simulate next chain event" }: { paymentId: string; label?: string }) {
+export function MockAdvanceButton({ paymentId, label = "Simulate next network step" }: { paymentId: string; label?: string }) {
   const api = useApi();
   const qc = useQueryClient();
   if (!isMockClient(api)) return null;
@@ -71,7 +71,7 @@ export function MockReorgButton({ paymentId }: { paymentId: string }) {
         qc.invalidateQueries();
       }}
     >
-      <FlaskConical size={14} aria-hidden /> Simulate reorg (mock)
+      <FlaskConical size={14} aria-hidden /> Simulate network correction (mock)
     </Button>
   );
 }

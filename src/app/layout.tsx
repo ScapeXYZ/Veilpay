@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Shell } from "@/components/shell";
 import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "VeilPay",
-  description: "Policy-guarded shielded Zcash payments for AI agents, verified by the merchant.",
+  description: "Give AI agents permission to pay, not permission to overspend. Policy-guarded shielded Zcash payments, verified by the merchant.",
   referrer: "no-referrer",
 };
 
@@ -15,7 +14,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <Providers>
-          <Shell>{children}</Shell>
+          {children}
         </Providers>
       </body>
     </html>

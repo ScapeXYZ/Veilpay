@@ -6,6 +6,8 @@ import { newIdempotencyKey } from "@/lib/api/types";
 import type { Payment } from "@/lib/contract/schemas";
 import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
+import { useNetworkMode } from "@/lib/api/data-source";
+import { WriteBlocked } from "./source";
 import { Button, ErrorBox, Field } from "./ui";
 import { inputCls } from "@/lib/styles";
 
@@ -30,6 +32,7 @@ export function RequestComposer({
   const { agentId } = useSelectedAgent();
   const handoff = useHandoff();
   const req = useRequestPayment();
+  const mode = useNetworkMode();
   const [invoiceId, setInvoiceId] = useState(preset.invoiceId);
   const [zec, setZec] = useState(preset.zec);
   const [reference, setReference] = useState(preset.reference);
@@ -37,11 +40,12 @@ export function RequestComposer({
   const [inputErr, setInputErr] = useState<string | null>(null);
 
   const submit = () => {
+    if (!mode.canWrite) return;
     setInputErr(null);
-    if (!agentId) return setInputErr("Create or select a customer agent first.");
+    if (!agentId) return setInputErr("No agent is set up for this view. Switch to the owner view.");
     const amountZat = parseZecInput(zec);
     if (!amountZat) return setInputErr("Enter a ZEC amount with at most 8 decimals.");
-    if (!invoiceId.trim()) return setInputErr("Enter the invoice id the merchant gave you.");
+    if (!invoiceId.trim()) return setInputErr("Enter the invoice ID the merchant gave you.");
     const body = { agentId, invoiceId: invoiceId.trim(), amountZat, reference: reference.slice(0, 64) };
     const bodyKey = JSON.stringify(body);
     const key = attempt && attempt.body === bodyKey && req.isError ? attempt.key : newIdempotencyKey();
@@ -60,11 +64,11 @@ export function RequestComposer({
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.3fr_0.7fr]">
-        <Field label="Invoice id" hint={api.mode === "live" ? "From the merchant (create one in the Merchant view)." : undefined}>
+        <Field label="Invoice ID" hint={api.mode === "live" ? "From the merchant (create one on the Merchant page)." : undefined}>
           <input className={inputCls} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} spellCheck={false} />
         </Field>
         <Field label="Amount (ZEC)">
-          <input className={`${inputCls} font-mono`} value={zec} onChange={(e) => setZec(e.target.value)} inputMode="decimal" />
+          <input className={`${inputCls} tabular-nums`} value={zec} onChange={(e) => setZec(e.target.value)} inputMode="decimal" />
         </Field>
       </div>
       <Field label="Reference">
@@ -80,10 +84,13 @@ export function RequestComposer({
           ))}
         </div>
       )}
-      <div>
-        <Button onClick={submit} busy={req.isPending} data-testid={testId ? `${testId}-submit` : undefined}>
-          {cta}
-        </Button>
+      <div className="flex flex-col gap-2">
+        <div>
+          <Button onClick={submit} busy={req.isPending} disabled={!mode.canWrite} data-testid={testId ? `${testId}-submit` : undefined}>
+            {cta}
+          </Button>
+        </div>
+        <WriteBlocked reason={mode.writeBlockedReason} />
       </div>
       {(inputErr || req.error) && <ErrorBox>{inputErr ?? errorText(req.error)}</ErrorBox>}
     </div>

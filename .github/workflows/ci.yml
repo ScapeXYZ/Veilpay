@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, integration/veilpay-milestone6]
+    branches: [main, integration/veilpay-milestone6, chore/demo-readiness]
 
 permissions:
   contents: read

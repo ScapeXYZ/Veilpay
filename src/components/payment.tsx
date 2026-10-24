@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { Ban, CheckCircle2, CircleDot, Lock, RotateCcw, ShieldAlert, Wrench } from "lucide-react";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useExecutePayment } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/types";
 import type { Decision, Payment } from "@/lib/contract/schemas";
@@ -20,16 +21,17 @@ import {
   WALLET_PHASE_COPY,
 } from "@/lib/present";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
-import { SourceTag } from "./source";
-import { Badge, Button, Card, ErrorBox, Notice, Zec } from "./ui";
+import { SourceTag, WriteBlocked } from "./source";
+import { Badge, Button, Card, ErrorBox, Notice, StatusBadge, Zec } from "./ui";
 
 export function PaymentBadge({ p }: { p: Payment }) {
+  const mode = useNetworkMode();
   const b = paymentBadge(p);
+  const label = mode.kind === "mock" && p.status === "confirmed" ? "Simulated complete" : b.label;
   return (
-    <Badge tone={b.tone} testId={`badge-${p.id}`}>
-      {b.tone === "review" && <Wrench size={11} aria-hidden />}
-      {b.label}
-    </Badge>
+    <StatusBadge tone={b.tone} testId={`badge-${p.id}`}>
+      {label}
+    </StatusBadge>
   );
 }
 
@@ -40,10 +42,10 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           {blocked ? <Ban size={16} className="text-rose-400" aria-hidden /> : <CheckCircle2 size={16} className="text-emerald-400" aria-hidden />}
-          {blocked ? "Backend policy blocked this payment" : "Backend policy approved this payment"}
+          {blocked ? "Blocked: this breaks a spending rule" : "Approved: within your spending rules"}
         </div>
         <span className="text-xs text-zinc-500">
-          policy v{d.policyVersion} · {fmtTime(d.evaluatedAt)}
+          rules v{d.policyVersion} · {fmtTime(d.evaluatedAt)}
         </span>
       </div>
       {d.violations.length > 0 && (
@@ -51,20 +53,20 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           {d.violations.map((v, i) => (
             <li key={i} className="rounded-lg bg-zinc-950/60 px-3 py-2 text-sm" data-testid={`violation-${v.code}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <code className="rounded bg-rose-950 px-1.5 py-0.5 text-xs text-rose-300">{v.code}</code>
-                <span className="text-zinc-200">{VIOLATION_COPY[v.code]}</span>
+                <span className="font-medium text-zinc-100">{VIOLATION_COPY[v.code]}</span>
+                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80" title="Error code">{v.code}</code>
               </div>
               {!compact && <p className="mt-1 text-xs text-zinc-400">{v.message}</p>}
               {(v.limitZat || v.requestedZat) && (
                 <div className="mt-1.5 flex flex-wrap gap-4 text-xs text-zinc-400">
                   {v.requestedZat && (
                     <span>
-                      requested <Zec zat={v.requestedZat} className="text-zinc-100" />
+                      asked for <Zec zat={v.requestedZat} className="text-zinc-100" />
                     </span>
                   )}
                   {v.limitZat && (
                     <span>
-                      limit <Zec zat={v.limitZat} className="text-zinc-100" />
+                      your limit <Zec zat={v.limitZat} className="text-zinc-100" />
                     </span>
                   )}
                 </div>
@@ -73,7 +75,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           ))}
         </ul>
       )}
-      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. The browser never evaluates policy; it shows the backend&apos;s decision.</p>}
+      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
     </div>
   );
 }
@@ -131,7 +133,7 @@ function FailureNotice({ p }: { p: Payment }) {
     <Notice tone="danger" title={<span className="flex items-center gap-2"><ShieldAlert size={15} aria-hidden />Failed: {FAILURE_COPY[p.failure.code]}</span>} testId="failure-definitive">
       <p>{p.failure.message}</p>
       <p className="mt-1 text-xs text-zinc-400">
-        Definitive failure reported by the backend (<code>{p.failure.code}</code>). The reserved amount was released.
+        This payment did not go through (<code>{p.failure.code}</code>). The set-aside amount was released.
       </p>
     </Notice>
   );
@@ -139,20 +141,26 @@ function FailureNotice({ p }: { p: Payment }) {
 
 function ExecuteBlock({ p }: { p: Payment }) {
   const ex = useExecutePayment();
+  const mode = useNetworkMode();
   if (p.status !== "authorized" || unresolvedOf(p)) return null;
   const err = ex.error;
   const retryable = err instanceof ApiError && err.body.code === "WALLET_UNAVAILABLE";
+  const manual = mode.kind === "testnet_manual";
   return (
     <div className="rounded-xl border border-sky-900 bg-sky-950/20 p-4" data-testid="execute-block">
-      <p className="text-sm text-zinc-200">Approved and reserved. Not paid until the shielded send is confirmed.</p>
+      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the network confirms it.</p>
       <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
-        <Lock size={12} aria-hidden /> A shielded send cannot be reversed once broadcast. The backend sends at most once.
+        <Lock size={12} aria-hidden /> A sent payment cannot be pulled back. VeilPay sends it at most once{manual ? "; an operator sends it from outside this app" : ""}.
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
-          {retryable ? "Retry execute (same request, no second send)" : "Execute shielded payment"}
-        </Button>
-      </div>
+      {mode.canExecute ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
+            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : "Send privately"}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-3"><WriteBlocked reason={mode.executeBlockedReason} testId="execute-blocked" /></div>
+      )}
       {err && <div className="mt-3"><ErrorBox>{errorText(err)}{retryable && " Nothing was sent; the payment is still authorized."}</ErrorBox></div>}
     </div>
   );
@@ -191,19 +199,19 @@ export function PaymentDetail({ p }: { p: Payment }) {
         </Card>
         <div className="flex flex-col gap-4">
           <DecisionPanel d={p.decision} />
-          <Card title="Send record" className="!bg-zinc-950/40" testId="send-record">
+          <Card title="Payment details" className="!bg-zinc-950/40" testId="send-record">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-zinc-500">Status</dt>
               <dd>{paymentBadge(p).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
-              <dd className="font-mono">{p.confirmations ?? 0}</dd>
-              <dt className="text-zinc-500">Pool</dt>
-              <dd>{p.pool ?? "not sent"}</dd>
-              <dt className="text-zinc-500">{p.mockRef ? "Mock ref" : "Txid"}</dt>
+              <dd className="tabular-nums">{p.confirmations ?? 0}</dd>
+              <dt className="text-zinc-500">Privacy</dt>
+              <dd>{p.pool ? `Private (${p.pool} pool)` : "Not sent yet"}</dd>
+              <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
               <dd className="truncate font-mono text-xs" data-testid="tx-ref">
                 {p.mockRef ? (
                   <>
-                    {p.mockRef} <Badge tone="neutral" className="ml-1">not a txid</Badge>
+                    {p.mockRef} <Badge tone="neutral" className="ml-1">practice only, not a txid or a real transaction</Badge>
                   </>
                 ) : p.txid ? (
                   <>
@@ -213,25 +221,25 @@ export function PaymentDetail({ p }: { p: Payment }) {
                     )}
                   </>
                 ) : (
-                  "none"
+                  <span className="font-sans text-sm text-zinc-400">None yet</span>
                 )}
               </dd>
               {op && (
                 <>
-                  <dt className="text-zinc-500">Wallet op</dt>
+                  <dt className="text-zinc-500">Send step</dt>
                   <dd data-testid="wallet-op">
                     {op.needsOperator ? "Requires operator review" : WALLET_OP_COPY[op.state]} · attempt {op.attempt}
                   </dd>
                   {op.phase && (
                     <>
-                      <dt className="text-zinc-500">Operator phase</dt>
+                      <dt className="text-zinc-500">Operator step</dt>
                       <dd data-testid="wallet-op-phase">{WALLET_PHASE_COPY[op.phase]}</dd>
                     </>
                   )}
                   {op.feeZat && (
                     <>
                       <dt className="text-zinc-500">Network fee</dt>
-                      <dd><Zec zat={op.feeZat} /> <span className="text-xs text-zinc-500">operator-approved, outside the policy budget</span></dd>
+                      <dd><Zec zat={op.feeZat} /> <span className="text-xs text-zinc-500">approved by the operator, not taken from the budget</span></dd>
                     </>
                   )}
                   {op.lastReconciledAt && (
@@ -247,7 +255,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
             </dl>
             {sentAlready && !awaitingOperatorConfirmation(op) && (
               <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
-                <CircleDot size={12} aria-hidden /> Broadcast or in flight: pausing the agent or changing policy does not affect this payment.
+                <CircleDot size={12} aria-hidden /> Already on its way: pausing the agent or changing the rules does not affect this payment.
               </p>
             )}
           </Card>
