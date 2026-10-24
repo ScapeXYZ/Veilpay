@@ -51,6 +51,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+  /operator/mainnet/read-only:
+    get:
+      tags:
+      - system
+      summary: Read operator-only mainnet wallet observations
+      description: >-
+        Available only when NETWORK=mainnet and a server-injected mainnet viewing adapter
+        supplies a current, internally consistent snapshot. Requires X-VeilPay-Operator-Token.
+        It is read-only: it cannot create a wallet, prepare, sign, submit, or broadcast a
+        transaction. The address, balance, sync height, and observations are wallet-reported;
+        chainEvidence.trusted is always false because no independently pinned full-node evidence
+        is configured.
+      security:
+      - operatorReadToken: []
+      parameters:
+      - $ref: '#/components/parameters/OperatorReadToken'
+      responses:
+        '200':
+          description: Current mainnet wallet-reported snapshot; not independently verified chain evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MainnetReadOnlySnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: NOT_FOUND when the configured network is not mainnet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: WALLET_UNAVAILABLE when no mainnet viewing adapter is configured or its snapshot is unsupported, stale, malformed, network-mismatched, or internally inconsistent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /session/demo:
     post:
       tags:
@@ -638,6 +675,11 @@ components:
       in: cookie
       name: __Host-veilpay_session
       description: HttpOnly, Secure, SameSite=Strict, Path=/, no Domain demo session cookie; carries context customer|merchant.
+    operatorReadToken:
+      type: apiKey
+      in: header
+      name: X-VeilPay-Operator-Token
+      description: Server-configured operator token for the mainnet read-only endpoint. It is not a demo session or a transaction-signing credential.
   parameters:
     AgentId:
       name: agentId
@@ -663,6 +705,12 @@ components:
         maxLength: 128
     CsrfToken:
       name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+    OperatorReadToken:
+      name: X-VeilPay-Operator-Token
       in: header
       required: true
       schema:
@@ -787,6 +835,81 @@ components:
               type: integer
             deepReorgAlert:
               type: boolean
+    MainnetReadOnlySnapshot:
+      type: object
+      description: >-
+        Operator-only mainnet snapshot. All balance, height, and transaction observations are
+        reported by the viewing wallet. This response does not constitute independently verified
+        blockchain evidence and cannot authorize a payment.
+      required:
+      - network
+      - address
+      - availableZat
+      - sync
+      - chainEvidence
+      - observations
+      properties:
+        network:
+          type: string
+          const: mainnet
+        address:
+          type: string
+          description: Mainnet Orchard-capable Unified Address reported by the viewing adapter.
+        availableZat:
+          $ref: '#/components/schemas/Zatoshi'
+        sync:
+          type: object
+          required:
+          - walletReportedHeight
+          - stale
+          properties:
+            walletReportedHeight:
+              type: integer
+              minimum: 1
+              description: Viewing wallet's reported synchronized chain height.
+            stale:
+              type: boolean
+              const: false
+              description: False only after the backend verifies equal nonzero wallet and reported chain heights.
+        chainEvidence:
+          type: object
+          description: Explicit trust boundary for the returned wallet observation.
+          required:
+          - trusted
+          - height
+          - reason
+          properties:
+            trusted:
+              type: boolean
+              const: false
+            height:
+              type: 'null'
+              description: No independently pinned chain height is configured.
+            reason:
+              type: string
+        observations:
+          type: array
+          description: Wallet-reported received outputs, never independent settlement proof.
+          items:
+            type: object
+            required:
+            - txid
+            - status
+            - blockHeight
+            - confirmations
+            properties:
+              txid:
+                type: string
+                pattern: '^[0-9a-f]{64}$'
+              status:
+                type: string
+                enum: [confirmed, mempool, transmitted, calculated, failed]
+              blockHeight:
+                type: integer
+                minimum: 0
+              confirmations:
+                type: integer
+                minimum: 0
     Session:
       type: object
       required:

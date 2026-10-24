@@ -16,9 +16,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:4000").await?;
+    let listener = tokio::net::TcpListener::bind(
+        std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:4000".into()),
+    )
+    .await?;
     println!(
-        "VeilPay backend listening on :4000; HTTP broadcasting disabled; manual testnet operator flow is separate"
+        "VeilPay backend listening on {}; HTTP broadcasting disabled; manual testnet operator flow is separate",
+        listener.local_addr()?
     );
     axum::serve(
         listener,

@@ -858,11 +858,14 @@ async fn idempotency_keys_are_required_and_scoped_to_operation_and_principal() {
 }
 #[tokio::test]
 async fn mainnet_disables_demo_bootstrap() {
-    let app = App::open(Config {
-        database_url: "sqlite::memory:".into(),
-        frontend_origin: ORIGIN.into(),
-        network: "mainnet".into(),
-    })
+    let app = App::open_with_wallet(
+        Config {
+            database_url: "sqlite::memory:".into(),
+            frontend_origin: ORIGIN.into(),
+            network: "mainnet".into(),
+        },
+        Some(Arc::new(ZingoWallet::new(Network::Mainnet))),
+    )
     .await
     .unwrap();
     let r = call(

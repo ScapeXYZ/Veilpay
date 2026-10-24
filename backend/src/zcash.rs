@@ -44,9 +44,17 @@ pub fn amount(v: &Value, key: &str) -> WalletResult<i64> {
     }
     Ok(n as i64)
 }
-pub fn orchard_address(v: &Value) -> WalletResult<String> {
+pub fn orchard_address_for(network: Network, v: &Value) -> WalletResult<String> {
     let a = str_field(v, "encoded_address")?;
-    if !a.starts_with("utest1")
+    // ZIP-316 uses u/utest for R0 and zu/zutest for shielded-only R2 UAs.
+    // The transport's explicit receiver flags are required because a prefix alone
+    // cannot prove the decoded receiver set.
+    let prefix_ok = match network {
+        Network::Mainnet => a.starts_with("u1") || a.starts_with("zu1"),
+        Network::Testnet => a.starts_with("utest1") || a.starts_with("zutest1"),
+        Network::Regtest => false,
+    };
+    if !prefix_ok
         || a.len() > 512
         || !a
             .bytes()
@@ -58,6 +66,9 @@ pub fn orchard_address(v: &Value) -> WalletResult<String> {
         return Err(WalletError::InvalidOutput);
     }
     Ok(a.into())
+}
+pub fn orchard_address(v: &Value) -> WalletResult<String> {
+    orchard_address_for(Network::Testnet, v)
 }
 pub fn prepared_ids(v: &Value) -> WalletResult<String> {
     let ids = v["txids"].as_array().ok_or(WalletError::InvalidOutput)?;
@@ -71,11 +82,19 @@ pub fn prepared_ids(v: &Value) -> WalletResult<String> {
     }
     Ok(id.into())
 }
-pub fn check_server(v: &Value) -> WalletResult<()> {
-    if v["chain_name"] != "test" || number(v, "latest_block_height")? == 0 {
+pub fn check_server_for(network: Network, v: &Value) -> WalletResult<()> {
+    let expected = match network {
+        Network::Mainnet => "main",
+        Network::Testnet => "test",
+        Network::Regtest => "regtest",
+    };
+    if v["chain_name"] != expected || number(v, "latest_block_height")? == 0 {
         return Err(WalletError::InvalidOutput);
     }
     Ok(())
+}
+pub fn check_server(v: &Value) -> WalletResult<()> {
+    check_server_for(Network::Testnet, v)
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReceivedOutput {
@@ -105,8 +124,8 @@ pub struct SentTransaction {
     pub recipients: Vec<(String, i64)>,
 }
 impl History {
-    pub fn parse(v: &Value) -> WalletResult<Self> {
-        if v["veilpay_schema"] != 1 || v["network"] != "testnet" {
+    pub fn parse_for(network: Network, v: &Value) -> WalletResult<Self> {
+        if v["veilpay_schema"] != 1 || v["network"] != network.as_str() {
             return Err(WalletError::InvalidOutput);
         }
         let tip = number(v, "tip_height")?;
@@ -200,12 +219,15 @@ impl History {
             });
         }
         Ok(Self {
-            network: Network::Testnet,
+            network,
             tip,
             scanned,
             received,
             sent,
         })
+    }
+    pub fn parse(v: &Value) -> WalletResult<Self> {
+        Self::parse_for(Network::Testnet, v)
     }
 }
 
@@ -218,8 +240,10 @@ pub fn match_invoice(
     previous: Option<&Value>,
     now: i64,
 ) -> WalletResult<Value> {
-    if history.network != Network::Testnet
-        || invoice["network"] != "testnet"
+    if history.network
+        != Network::parse(invoice["network"].as_str().unwrap_or(""))
+            .map_err(|_| WalletError::InvalidOutput)?
+        || history.network == Network::Regtest
         || required == 0
         || history.scanned != history.tip
     {
@@ -318,6 +342,6 @@ pub fn match_invoice(
         }
     }
     Ok(
-        serde_json::json!({"invoiceId":invoice["id"],"state":state,"expectedZat":expected.to_string(),"receivedZat":total.to_string(),"confirmations":confirmations,"confirmationsRequired":required,"late":late,"txid":matched_id,"blockHeight":height,"tipHeight":history.tip,"network":"testnet","method":"merchant_wallet_scan","mock":false,"acknowledgmentEligible":matches!(state,"received"|"late"),"acknowledgmentValid":false}),
+        serde_json::json!({"invoiceId":invoice["id"],"state":state,"expectedZat":expected.to_string(),"receivedZat":total.to_string(),"confirmations":confirmations,"confirmationsRequired":required,"late":late,"txid":matched_id,"blockHeight":height,"tipHeight":history.tip,"network":history.network.as_str(),"method":"merchant_wallet_scan","mock":false,"acknowledgmentEligible":matches!(state,"received"|"late"),"acknowledgmentValid":false}),
     )
 }

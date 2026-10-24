@@ -60,6 +60,15 @@ pub enum WalletOutcome {
     RejectedBeforeCreation(PreCreationRejection),
     Unknown,
 }
+#[derive(Clone, Debug)]
+pub struct ReadOnlySnapshot {
+    pub address: String,
+    pub available_zat: i64,
+    pub sync_height: u64,
+    pub chain_height: u64,
+    /// Wallet-reported observations are not independent chain proof.
+    pub observations: crate::zcash::History,
+}
 pub type WalletFuture<'a> = Pin<Box<dyn Future<Output = WalletOutcome> + Send + 'a>>;
 
 /// Trusted, server-side adapters only. Never accept reconciliation evidence from API callers.
@@ -70,6 +79,11 @@ pub trait WalletAdapter: Send + Sync {
     fn observe<'a>(&'a self, intent: &'a SendIntent) -> WalletFuture<'a>;
     fn requires_operator(&self) -> bool {
         false
+    }
+    /// Read-only data from a dedicated viewing wallet. Implementations must never
+    /// prepare, sign, submit, or create wallets as a side effect.
+    fn read_only_snapshot(&self) -> crate::zcash::DataFuture<'_, ReadOnlySnapshot> {
+        Box::pin(async { Err(crate::zcash::WalletError::Unsupported) })
     }
     fn receiving_address(&self) -> crate::zcash::DataFuture<'_, String> {
         Box::pin(async { Err(crate::zcash::WalletError::Unsupported) })
@@ -192,6 +206,11 @@ impl WalletAdapter for CliWallet {
             }
             WalletOutcome::Unknown
         })
+    }
+    /// Read-only data from a dedicated viewing wallet. Implementations must never
+    /// prepare, sign, submit, or create wallets as a side effect.
+    fn read_only_snapshot(&self) -> crate::zcash::DataFuture<'_, ReadOnlySnapshot> {
+        Box::pin(async { Err(crate::zcash::WalletError::Unsupported) })
     }
     fn receiving_address(&self) -> crate::zcash::DataFuture<'_, String> {
         Box::pin(async { self.transport.address().await })

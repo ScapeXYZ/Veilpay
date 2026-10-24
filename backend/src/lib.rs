@@ -53,6 +53,7 @@ pub struct App {
     pub pool: SqlitePool,
     config: Config,
     wallet: Option<Arc<dyn WalletAdapter>>,
+    operator_read_token_hash: Option<[u8; 32]>,
 }
 type Result<T> = std::result::Result<T, ApiError>;
 #[derive(Debug)]
@@ -228,12 +229,22 @@ impl App {
                 ));
             }
         };
-        Self::open_with_wallet(config, wallet).await
+        let token = std::env::var("VEILPAY_OPERATOR_READ_TOKEN").ok();
+        Self::open_with_wallet_and_operator_token(config, wallet, token.as_deref()).await
     }
     /// Adapter injection is a server-side integration seam; no HTTP route configures it.
     pub async fn open_with_wallet(
         config: Config,
         wallet: Option<Arc<dyn WalletAdapter>>,
+    ) -> std::result::Result<Self, sqlx::Error> {
+        Self::open_with_wallet_and_operator_token(config, wallet, None).await
+    }
+    /// The token is accepted only at construction and retained as a hash. This
+    /// test/integration seam never reads wallets or exposes the token.
+    pub async fn open_with_wallet_and_operator_token(
+        config: Config,
+        wallet: Option<Arc<dyn WalletAdapter>>,
+        operator_read_token: Option<&str>,
     ) -> std::result::Result<Self, sqlx::Error> {
         let network =
             Network::parse(&config.network).map_err(|e| sqlx::Error::Protocol(e.into()))?;
@@ -275,16 +286,59 @@ impl App {
             ))
             .execute(&pool)
             .await?;
+        let operator_read_token_hash =
+            operator_read_token.map(|token| Sha256::digest(token.as_bytes()).into());
         let app = Self {
             pool,
             config,
             wallet,
+            operator_read_token_hash,
         };
         // Read-only recovery; pending operations are never submitted on startup.
         app.reconcile_wallet_operations()
             .await
             .map_err(|_| sqlx::Error::Protocol("Wallet recovery failed".into()))?;
         Ok(app)
+    }
+    pub(crate) async fn mainnet_read_only_snapshot(&self) -> Result<Value> {
+        if self.config.network != "mainnet" {
+            return Err(ApiError(404, "NOT_FOUND"));
+        }
+        let wallet = self
+            .wallet
+            .as_ref()
+            .ok_or(ApiError(503, "WALLET_UNAVAILABLE"))?;
+        let snapshot = wallet
+            .read_only_snapshot()
+            .await
+            .map_err(|_| ApiError(503, "WALLET_UNAVAILABLE"))?;
+        if wallet.network() != Network::Mainnet
+            || snapshot.sync_height == 0
+            || snapshot.chain_height == 0
+            || snapshot.sync_height != snapshot.chain_height
+            || snapshot.observations.network != Network::Mainnet
+            || snapshot.observations.tip != snapshot.chain_height
+            || snapshot.observations.scanned != snapshot.sync_height
+            || snapshot.available_zat < 0
+            || zcash::orchard_address_for(Network::Mainnet, &json!({"encoded_address":snapshot.address,"has_orchard":true,"has_sapling":false,"has_transparent":false})).is_err()
+        {
+            return Err(ApiError(503, "WALLET_UNAVAILABLE"));
+        }
+        let observations: Vec<Value> = snapshot.observations.received.iter().map(|o| json!({"txid":o.txid,"status":o.status,"blockHeight":o.height,"confirmations":if o.status=="confirmed" { snapshot.chain_height.saturating_sub(o.height)+1 } else { 0 }})).collect();
+        Ok(
+            json!({"network":"mainnet","address":snapshot.address,"availableZat":snapshot.available_zat.to_string(),"sync":{"walletReportedHeight":snapshot.sync_height,"stale":false},"chainEvidence":{"trusted":false,"height":null,"reason":"wallet-reported lightwallet observation; no independently pinned full-node evidence configured"},"observations":observations}),
+        )
+    }
+    fn operator_token_matches(&self, candidate: Option<&str>) -> bool {
+        let Some(expected) = self.operator_read_token_hash else {
+            return false;
+        };
+        let actual: [u8; 32] = Sha256::digest(candidate.unwrap_or("").as_bytes()).into();
+        expected
+            .iter()
+            .zip(actual)
+            .fold(0u8, |d, (a, b)| d | (a ^ b))
+            == 0
     }
     pub fn router(self) -> Router {
         let cors = CorsLayer::new()
@@ -357,6 +411,15 @@ async fn dispatch(
             &json!({"status":"ok","network":app.config.network,"wallet":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"operator_required"}else if app.wallet.is_some(){"broadcast_disabled"}else{"ready"},"walletBackend":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"zingo-cli"}else if app.wallet.is_some(){"zingo"}else{"mock"},"mode":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){"testnet_manual"}else if app.wallet.is_some(){"disabled"}else{"mock"},"chainHeight":null,"confirmationsRequired":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){3}else{1},"reconciler":{"lastRunAt":last_run,"unresolved":unresolved},"chainWatcher":{"supported":false,"lastBlockAt":null,"watchDepth":if app.wallet.as_ref().is_some_and(|w|w.requires_operator()){0}else{100},"deepReorgAlert":false}}),
             false,
         ));
+    }
+    if path == "operator/mainnet/read-only" && method == Method::GET {
+        if !app.operator_token_matches(
+            h.get("x-veilpay-operator-token")
+                .and_then(|v| v.to_str().ok()),
+        ) {
+            return Err(ApiError(401, "UNAUTHENTICATED"));
+        }
+        return Ok(reply(200, &app.mainnet_read_only_snapshot().await?, false));
     }
     if write && h.get("origin").and_then(|x| x.to_str().ok()) != Some(&app.config.frontend_origin) {
         return Err(ApiError(403, "CSRF_FAILED"));
