@@ -90,7 +90,7 @@ function NewPayment() {
               <ol className="space-y-2 text-sm text-zinc-400">
                 <li>2. VeilPay checks the amount, budget and merchant against your rules. If it is blocked you see exactly which rule, and no money moves.</li>
                 <li>3. Approved means the money is set aside, not paid yet.{mode.kind === "testnet_manual" ? " An operator then sends it." : ""}</li>
-                <li>4. It counts as paid only once the network confirms it.</li>
+                <li>4. It counts as paid only once the VeilPay server reports enough network confirmations (simulated in practice mode).</li>
                 <li>5. The merchant checks that its invoice was paid.</li>
               </ol>
             </Card>
@@ -116,7 +116,7 @@ function NewPayment() {
 export default function NewPaymentPage() {
   return (
     <>
-      <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the network confirms it." />
+      <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the VeilPay server reports enough network confirmations; in practice mode they are simulated." />
       <RequireContext ctx="customer">
         <NewPayment />
       </RequireContext>

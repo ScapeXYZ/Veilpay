@@ -231,7 +231,7 @@ export default function MerchantPage() {
     <>
       <PageHeader
         title="Merchant verification"
-        subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer shares no keys; shielded payment amounts and parties are not public."
+        subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer shares no keys. In practice mode receipts and confirmations are simulated."
       />
       <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What this proves, exactly">
