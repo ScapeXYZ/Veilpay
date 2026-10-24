@@ -1253,7 +1253,8 @@ components:
           type:
           - string
           - 'null'
-          description: 'Mock mode only: synthetic reference, never formatted like a txid.'
+          pattern: '^mock_[0-9a-f]{32}$'
+          description: 'Mock mode only: generated synthetic reference, never formatted like a txid.'
         walletOperation:
           $ref: '#/components/schemas/WalletOperation'
     PrivacyLens:
@@ -1440,7 +1441,10 @@ components:
           $ref: '#/components/schemas/Verification'
         statementType:
           type: string
-          const: merchant_acknowledgment_not_settlement_proof
+          enum:
+          - merchant_acknowledgment_not_settlement_proof
+          - merchant_acknowledgment_simulation_not_settlement_proof
+          description: The mock variant explicitly records a simulation, never independent blockchain settlement.
         invalidatedAt:
           type: string
           format: date-time

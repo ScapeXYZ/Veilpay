@@ -5,8 +5,14 @@ async function createAgent(page: import("@playwright/test").Page) {
   const create = page.getByRole("button", { name: "Create demo agent" });
   const summary = page.getByTestId("agent-summary");
   await expect(create.or(summary)).toBeVisible({ timeout: 15_000 });
-  if (await create.isVisible()) await create.click();
+  let agentId: string | null = null;
+  if (await create.isVisible()) {
+    const response = page.waitForResponse((r) => r.url().endsWith("/api/agents") && r.request().method() === "POST");
+    await create.click();
+    agentId = (await (await response).json()).id;
+  }
   await expect(summary).toBeVisible({ timeout: 15_000 });
+  return agentId;
 }
 
 async function createInvoice(page: import("@playwright/test").Page, amount: string, reference: string) {
@@ -72,7 +78,8 @@ test("backend-unavailable state is read-only and never labelled real", async ({ 
 
 test("actual Axum mock flow enforces the allowance, simulates one permitted payment, and verifies its merchant receipt", async ({ page }, testInfo) => {
   const allowedInvoice = await createInvoice(page, "0.10", "BROWSER-ALLOWED");
-  await createAgent(page);
+  const agentId = await createAgent(page);
+  expect(agentId).toMatch(/^agt_/);
 
   await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: /payments/i }).click();
   await page.getByTestId("new-payment").click();
@@ -119,6 +126,68 @@ test("actual Axum rejects an over-cap request and leaves it visibly unpaid", asy
   await expect(rejected).toContainText(/blocked: this breaks a spending rule/i);
   await expect(rejected.getByTestId("violation-CAP_EXCEEDED")).toBeVisible();
   await expect(rejected).toContainText(/no money moved and nothing was set aside/i);
+});
+
+test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and simulated-complete payments", async ({ page }) => {
+  // All values here are the narrated demo values. The configured web servers are the
+  // real loopback Axum regtest/mock backend and the Next proxy; no route is intercepted.
+  const blockedInvoice = await createInvoice(page, "0.20", "DEMO-BLOCKED-0.20");
+  const allowedInvoice = await createInvoice(page, "0.05", "DEMO-ALLOWED-0.05");
+  const agentId = await createAgent(page);
+  expect(agentId).toMatch(/^agt_/);
+  await expect(page.getByTestId("agent-summary")).toContainText("1.00 ZEC");
+  await expect(page.getByTestId("agent-summary")).toContainText("0.10 ZEC");
+
+  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: /payments/i }).click();
+  await page.getByTestId("new-payment").click();
+  let request = page.getByTestId("request-new");
+  await request.getByLabel("Invoice ID").fill(blockedInvoice);
+  await request.getByLabel("Amount (ZEC)").fill("0.20");
+  await request.getByLabel("Reference").fill("DEMO-BLOCKED-0.20");
+  await request.getByTestId("request-new-submit").click();
+  const rejected = page.getByTestId("new-rejected");
+  await expect(rejected.getByTestId("violation-CAP_EXCEEDED")).toBeVisible();
+  await expect(rejected).toContainText(/no money moved and nothing was set aside/i);
+
+  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: /payments/i }).click();
+  await page.getByTestId("new-payment").click();
+  request = page.getByTestId("request-new");
+  await request.getByLabel("Invoice ID").fill(allowedInvoice);
+  await request.getByLabel("Amount (ZEC)").fill("0.05");
+  await request.getByLabel("Reference").fill("DEMO-ALLOWED-0.05");
+  await request.getByTestId("request-new-submit").click();
+  await expect(page.getByTestId("new-approved")).toBeVisible();
+  await page.getByTestId("execute").click();
+  await expect(page.getByText("Simulated complete", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("tx-ref")).toContainText(/practice only, not a txid or a real transaction/i);
+  await expect(page.getByTestId("tx-ref")).toContainText(/^mock_[0-9a-f]{32}/i);
+
+  const paymentHref = await page.getByTestId("open-payment").getAttribute("href");
+  expect(paymentHref).toMatch(/^\/app\/payments\/pay_/);
+  const paymentId = paymentHref!.split("/").at(-1)!;
+  await page.goto("/app/merchant");
+  const lookup = page.getByTestId("lookup");
+  await lookup.getByLabel("Payment ID to verify").fill(paymentId);
+  await lookup.getByRole("button", { name: "Check" }).click();
+  await expect(page.getByTestId("verification-method")).toContainText(/mock.*simulated, no chain read.*not evidence/i);
+  await page.getByTestId("ack").click();
+  await expect(page.getByTestId("acknowledged")).toContainText(/not independent blockchain settlement/i);
+
+  await page.goto("/app/activity");
+  await expect(page.getByTestId("activity-table")).toContainText("DEMO-BLOCKED-0.20");
+  await expect(page.getByTestId("activity-table")).toContainText("DEMO-ALLOWED-0.05");
+  await page.getByTestId("view-blocked").click();
+  await expect(page.getByTestId("activity-table")).toContainText("DEMO-BLOCKED-0.20");
+  await page.getByTestId("view-verified").click();
+  await expect(page.getByTestId("activity-table")).toContainText("DEMO-ALLOWED-0.05");
+
+  await page.goto("/app");
+  await page.getByLabel("Existing agent ID").fill(agentId!);
+  await page.getByRole("button", { name: "Select agent" }).click();
+  await expect(page.getByTestId("metric-spent")).toContainText("0.05 ZEC");
+  await expect(page.getByTestId("metric-remaining")).toContainText("0.95 ZEC");
+  await expect(page.getByTestId("mock-banner")).toContainText(/every payment, confirmation and receipt here is pretend/i);
+  expect(await page.evaluate(() => ({ local: Object.keys(localStorage).length, session: Object.keys(sessionStorage).length }))).toEqual({ local: 0, session: 0 });
 });
 
 test("loading state is shown while the Axum health response is pending", async ({ page }) => {

@@ -384,7 +384,7 @@ export class MockApiClient implements ApiClient, MockControls {
         err(409, "POLICY_REJECTED", violations[0].message);
       }
       p.status = "submitted";
-      p.mockRef = `MOCK-REF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      p.mockRef = `mock_${crypto.randomUUID().replaceAll("-", "")}`;
       p.walletOperation = { id: mockId("wop"), state: "broadcast", attempt: 1, lastReconciledAt: null, needsOperator: false };
       p.timeline.push({ status: "submitted", kind: "status", at: t, note: "Mock wallet accepted the send. No chain transaction exists." });
       return clone(p);
@@ -417,6 +417,7 @@ export class MockApiClient implements ApiClient, MockControls {
         at: this.iso(),
         note: b.note,
         signature: `mock-signature-${Math.random().toString(16).slice(2, 14)}`,
+        statementType: "merchant_acknowledgment_simulation_not_settlement_proof",
       };
       this.acknowledged.set(paymentId, ack);
       return ack;

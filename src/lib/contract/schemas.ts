@@ -228,7 +228,8 @@ export const Payment = z.object({
   expiresAt: dateTime.optional(),
   createdAt: dateTime,
   privacy: PrivacyLens.optional(),
-  mockRef: z.string().nullable().optional(),
+  /** Generated mock references are visibly non-txid identifiers. */
+  mockRef: z.string().regex(/^mock_[0-9a-f]{32}$/).nullable().optional(),
   walletOperation: WalletOperation.optional(),
 });
 
@@ -320,7 +321,10 @@ export const Acknowledgment = z.object({
   note: z.string().optional(),
   signature: z.string(),
   evidence: Verification.optional(),
-  statementType: z.literal("merchant_acknowledgment_not_settlement_proof").optional(),
+  statementType: z.enum([
+    "merchant_acknowledgment_not_settlement_proof",
+    "merchant_acknowledgment_simulation_not_settlement_proof",
+  ]).optional(),
   invalidatedAt: dateTime.optional(),
   invalidationReason: z.string().optional(),
 });

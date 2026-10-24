@@ -1101,10 +1101,14 @@ async fn perform(
                 if receipt["mock"] == true { "mock:" } else { "" },
                 mac.finalize().into_bytes()
             );
-            let mut ack = json!({"paymentId":pid,"merchantId":owner,"at":at,"signature":signature});
+            let mut ack = json!({"paymentId":pid,"merchantId":owner,"at":at,"signature":signature,
+            "statementType":if receipt["mock"] == true {
+                "merchant_acknowledgment_simulation_not_settlement_proof"
+            } else {
+                "merchant_acknowledgment_not_settlement_proof"
+            }});
             if receipt["mock"] == false {
                 ack["evidence"] = receipt.clone();
-                ack["statementType"] = json!("merchant_acknowledgment_not_settlement_proof");
             }
             if let Some(note) = b.get("note") {
                 ack["note"] = note.clone();

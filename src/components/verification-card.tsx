@@ -77,7 +77,7 @@ export function VerificationCard({ paymentId }: { paymentId: string }) {
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {done ? (
           <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="acknowledged">
-            <BadgeCheck size={16} aria-hidden /> Marked as received {fmtTime(done.at)}. This is the merchant&apos;s own statement.
+            <BadgeCheck size={16} aria-hidden /> Marked as received {fmtTime(done.at)}. This is the merchant&apos;s own statement, not independent blockchain settlement.
             {done.invalidatedAt && (
               <span className="text-amber-300" data-testid="ack-statement-invalidated"> Invalidated {fmtTime(done.invalidatedAt)}{done.invalidationReason ? `: ${done.invalidationReason}` : ""}.</span>
             )}

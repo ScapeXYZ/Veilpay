@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:http": "python3 scripts/test-http-integration.py",
     "test:browser": "playwright test",
+    "test:browser:isolated": "node scripts/run-demo-walkthrough.mjs --full",
+    "demo:walkthrough": "node scripts/run-demo-walkthrough.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
