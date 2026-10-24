@@ -4,8 +4,11 @@ test.describe.configure({ timeout: 120_000 });
 
 // Reviewer walkthrough corrections, exercised against the real Axum regtest/mock backend.
 
+// Dismiss the optional tour through its own UI (no direct storage writes in tests either).
 async function hideTour(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("veilpay.onboarding.v1", "hidden"));
+  await page.goto("/app");
+  const skip = page.getByTestId("onboarding-skip");
+  await skip.waitFor({ state: "visible", timeout: 5_000 }).then(() => skip.click(), () => undefined);
 }
 
 async function simulatedPayment(page: Page): Promise<string> {
