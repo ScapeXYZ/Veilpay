@@ -202,3 +202,8 @@ export function fmtTime(iso: string): string {
   if (Number.isNaN(d.getTime())) return "unknown time";
   return `${pad2(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
 }
+
+/** Last backend event time for a payment (the contract has no updatedAt). */
+export function lastUpdated(p: Payment): string {
+  return p.timeline.length > 0 ? p.timeline[p.timeline.length - 1].at : p.createdAt;
+}

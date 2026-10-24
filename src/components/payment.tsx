@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { Ban, CheckCircle2, CircleDot, Lock, RotateCcw, ShieldAlert, Wrench } from "lucide-react";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useExecutePayment } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/types";
 import type { Decision, Payment } from "@/lib/contract/schemas";
@@ -20,7 +21,7 @@ import {
   WALLET_PHASE_COPY,
 } from "@/lib/present";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
-import { SourceTag } from "./source";
+import { SourceTag, WriteBlocked } from "./source";
 import { Badge, Button, Card, ErrorBox, Notice, Zec } from "./ui";
 
 export function PaymentBadge({ p }: { p: Payment }) {
@@ -139,20 +140,26 @@ function FailureNotice({ p }: { p: Payment }) {
 
 function ExecuteBlock({ p }: { p: Payment }) {
   const ex = useExecutePayment();
+  const mode = useNetworkMode();
   if (p.status !== "authorized" || unresolvedOf(p)) return null;
   const err = ex.error;
   const retryable = err instanceof ApiError && err.body.code === "WALLET_UNAVAILABLE";
+  const manual = mode.kind === "testnet_manual";
   return (
     <div className="rounded-xl border border-sky-900 bg-sky-950/20 p-4" data-testid="execute-block">
-      <p className="text-sm text-zinc-200">Approved and reserved. Not paid until the shielded send is confirmed.</p>
+      <p className="text-sm text-zinc-200">Policy approved and reserved. Not paid until the shielded send is observed with confirmations.</p>
       <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
-        <Lock size={12} aria-hidden /> A shielded send cannot be reversed once broadcast. The backend sends at most once.
+        <Lock size={12} aria-hidden /> A shielded send cannot be reversed once broadcast. The backend sends at most once{manual ? "; an operator signs and broadcasts outside this app" : ""}.
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
-          {retryable ? "Retry execute (same request, no second send)" : "Execute shielded payment"}
-        </Button>
-      </div>
+      {mode.canExecute ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
+            {retryable ? "Retry (same request, no second send)" : manual ? "Stage for operator" : "Execute shielded payment"}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-3"><WriteBlocked reason={mode.executeBlockedReason} testId="execute-blocked" /></div>
+      )}
       {err && <div className="mt-3"><ErrorBox>{errorText(err)}{retryable && " Nothing was sent; the payment is still authorized."}</ErrorBox></div>}
     </div>
   );

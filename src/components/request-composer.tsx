@@ -6,6 +6,8 @@ import { newIdempotencyKey } from "@/lib/api/types";
 import type { Payment } from "@/lib/contract/schemas";
 import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
+import { useNetworkMode } from "@/lib/api/data-source";
+import { WriteBlocked } from "./source";
 import { Button, ErrorBox, Field } from "./ui";
 import { inputCls } from "@/lib/styles";
 
@@ -30,6 +32,7 @@ export function RequestComposer({
   const { data: session } = useSession();
   const handoff = useHandoff();
   const req = useRequestPayment();
+  const mode = useNetworkMode();
   const [invoiceId, setInvoiceId] = useState(preset.invoiceId);
   const [zec, setZec] = useState(preset.zec);
   const [reference, setReference] = useState(preset.reference);
@@ -37,6 +40,7 @@ export function RequestComposer({
   const [inputErr, setInputErr] = useState<string | null>(null);
 
   const submit = () => {
+    if (!mode.canWrite) return;
     setInputErr(null);
     const agentId = session?.agentId;
     if (!agentId) return setInputErr("This session has no agent. Switch to the customer context.");
@@ -81,10 +85,13 @@ export function RequestComposer({
           ))}
         </div>
       )}
-      <div>
-        <Button onClick={submit} busy={req.isPending} data-testid={testId ? `${testId}-submit` : undefined}>
-          {cta}
-        </Button>
+      <div className="flex flex-col gap-2">
+        <div>
+          <Button onClick={submit} busy={req.isPending} disabled={!mode.canWrite} data-testid={testId ? `${testId}-submit` : undefined}>
+            {cta}
+          </Button>
+        </div>
+        <WriteBlocked reason={mode.writeBlockedReason} />
       </div>
       {(inputErr || req.error) && <ErrorBox>{inputErr ?? errorText(req.error)}</ErrorBox>}
     </div>

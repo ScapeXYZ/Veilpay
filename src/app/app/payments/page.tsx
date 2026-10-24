@@ -1,10 +1,13 @@
 "use client";
 
 import clsx from "clsx";
+import { ArrowRight, Plus } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PaymentDetail, PaymentRow } from "@/components/payment";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { Card, ErrorBox, Skeleton } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, usePayment, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { unresolvedOf } from "@/lib/present";
@@ -66,15 +69,32 @@ function Payments() {
           </div>
         )}
       </Card>
-      <Card>{detailError ? <ErrorBox>{errorText(detailError)}</ErrorBox> : detailLoading ? <Skeleton className="h-64" /> : detail ? <PaymentDetail p={detail} /> : <p className="text-sm text-zinc-500">Select a payment.</p>}</Card>
+      <Card>
+        {detailError ? <ErrorBox>{errorText(detailError)}</ErrorBox> : detailLoading ? <Skeleton className="h-64" /> : detail ? (
+          <>
+            <PaymentDetail p={detail} />
+            <Link href={`/app/payments/${detail.id}`} className="mt-4 inline-flex items-center gap-1 text-sm text-accent-300 hover:text-accent-200">Open payment page <ArrowRight size={13} aria-hidden /></Link>
+          </>
+        ) : <p className="text-sm text-zinc-500">Select a payment.</p>}
+      </Card>
     </div>
+  );
+}
+
+function NewButton() {
+  const mode = useNetworkMode();
+  if (!mode.canWrite) return null;
+  return (
+    <Link href="/app/payments/new" data-testid="new-payment" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-400 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
+      <Plus size={14} aria-hidden /> New request
+    </Link>
   );
 }
 
 export default function PaymentsPage() {
   return (
     <>
-      <PageHeader title="Payments" subtitle="Every status, confirmation and failure here is the backend's. Unresolved sends are shown as unresolved, never as failed, and never resent." />
+      <PageHeader title="Payments" subtitle="Every status, confirmation and failure here is the backend's. Unresolved sends are shown as unresolved, never as failed, and never resent." right={<NewButton />} />
       <RequireContext ctx="customer">
         <Payments />
       </RequireContext>
