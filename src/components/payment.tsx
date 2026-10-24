@@ -148,14 +148,14 @@ function ExecuteBlock({ p }: { p: Payment }) {
   const manual = mode.kind === "testnet_manual";
   return (
     <div className="rounded-xl border border-sky-900 bg-sky-950/20 p-4" data-testid="execute-block">
-      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the network confirms it.</p>
+      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the server reports enough network confirmations{mode.kind === "mock" ? " (simulated in practice mode)" : ""}.</p>
       <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
         <Lock size={12} aria-hidden /> A sent payment cannot be pulled back. VeilPay sends it at most once{manual ? "; an operator sends it from outside this app" : ""}.
       </p>
       {mode.canExecute ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
-            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : "Send privately"}
+            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : mode.kind === "mock" ? "Simulate send" : mode.kind === "testnet" ? "Send on the test network" : "Send"}
           </Button>
         </div>
       ) : (
@@ -168,6 +168,7 @@ function ExecuteBlock({ p }: { p: Payment }) {
 
 export function PaymentDetail({ p }: { p: Payment }) {
   const op = p.walletOperation;
+  const simulated = useNetworkMode().kind === "mock";
   const sentAlready = ["submitted", "confirming", "confirmed"].includes(p.status);
   return (
     <div className="flex flex-col gap-4" data-testid="payment-detail">
@@ -204,9 +205,9 @@ export function PaymentDetail({ p }: { p: Payment }) {
               <dt className="text-zinc-500">Status</dt>
               <dd>{paymentBadge(p).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
-              <dd className="tabular-nums">{p.confirmations ?? 0}</dd>
+              <dd className="tabular-nums">{p.confirmations ?? 0}{simulated && <span className="text-xs text-zinc-500"> (simulated)</span>}</dd>
               <dt className="text-zinc-500">Privacy</dt>
-              <dd>{p.pool ? `Private (${p.pool} pool)` : "Not sent yet"}</dd>
+              <dd>{!p.pool ? "Not sent yet" : simulated ? `Simulated ${p.pool} pool send, nothing real moved` : `${p.pool} pool, as reported by VeilPay`}</dd>
               <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
               <dd className="truncate font-mono text-xs" data-testid="tx-ref">
                 {p.mockRef ? (

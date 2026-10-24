@@ -10,7 +10,7 @@ import { useState } from "react";
 export const DEMO_STEPS = [
   { href: "/", ctx: "customer", title: "Blocked agent", say: "The agent asks for 0.75 ZEC. The backend blocks it: CAP_EXCEEDED, exact limit shown." },
   { href: "/policy", ctx: "customer", title: "The owner's policy", say: "Cap, budget, allowed merchants. Enforced server-side, re-checked at execute." },
-  { href: "/", ctx: "customer", title: "Approved, then sent", say: "A request inside policy is reserved, then sent once, shielded." },
+  { href: "/", ctx: "customer", title: "Approved, then sent", say: "A request inside policy is reserved, then sent once (simulated here)." },
   { href: "/payments", ctx: "customer", title: "Honest timeline", say: "Confirmations, reorgs and unresolved sends shown as they are. Nothing resent." },
   { href: "/merchant", ctx: "merchant", title: "Merchant verifies", say: "The merchant checks this invoice with its own viewing key. No customer key." },
   { href: "/privacy", ctx: "customer", title: "What stays hidden", say: "Amount, sender, recipient and memo never hit the public chain." },
@@ -31,7 +31,7 @@ export function DemoGuide() {
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3" data-testid="demo-guide">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          <PlayCircle size={14} aria-hidden /> Two-minute demo
+          <PlayCircle size={14} aria-hidden /> Interactive demo
         </div>
         <button onClick={() => setOpen(false)} aria-label="Hide guide" className="text-zinc-500 hover:text-zinc-300">
           <X size={14} />

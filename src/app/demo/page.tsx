@@ -117,10 +117,10 @@ function PrivacyStep({ payment }: { payment: Payment | null }) {
   useCtx("customer");
   const l = payment?.privacy;
   return (
-    <Frame title="What stayed private" say="Amount, sender, receiver and notes are hidden from the public. Only that a payment happened, when, and its fee can be seen.">
+    <Frame title="Who would see what" say="How privacy is meant to work for a shielded Zcash payment. This is the simulated server answer, not a check of a real network.">
       {!l ? <p className="text-sm text-zinc-500">No lens for this payment.</p> : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="demo-privacy">
-          {[{ t: "Kept private", i: l.hiddenOnChain }, { t: "Anyone online sees", i: l.publicChainSees }, { t: "The merchant sees", i: l.merchantSees }, { t: "The owner sees", i: l.customerSees }].map((c) => (
+          {[{ t: "Designed to stay private", i: l.hiddenOnChain }, { t: "Anyone online sees", i: l.publicChainSees }, { t: "The merchant sees", i: l.merchantSees }, { t: "The owner sees", i: l.customerSees }].map((c) => (
             <div key={c.t} className="rounded-xl bg-zinc-950 p-4 ring-1 ring-zinc-800">
               <div className="mb-2 text-sm font-semibold text-zinc-100">{c.t}</div>
               <ul className="space-y-1 text-sm text-zinc-300">{(c.i ?? []).map((x) => <li key={x}>· {x}</li>)}</ul>
@@ -142,8 +142,8 @@ function Walkthrough({ onReset }: { onReset: () => void }) {
     <div className="mx-auto flex max-w-5xl flex-col gap-5 px-4 py-8 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50 sm:text-[28px]">2-minute demo</h1>
-          <p className="mt-1 text-[15px] text-zinc-400">A practice run in your browser. It never touches a real server, wallet or network.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50 sm:text-[28px]">Interactive demo</h1>
+          <p className="mt-1 text-[15px] text-zinc-400">A simulation in your browser, not a video. It never touches a real server, wallet or network.</p>
         </div>
         <Button variant="secondary" onClick={onReset} data-testid="demo-reset"><RotateCcw size={14} aria-hidden /> Replay from start</Button>
       </div>
@@ -160,19 +160,19 @@ function Walkthrough({ onReset }: { onReset: () => void }) {
 
       <div aria-live="polite">
         {step === 0 && (
-          <Frame title="Let your AI agent pay, without overspending" say="This is a practice run inside your browser. No real money, wallet or network is involved. Nine short steps, about two minutes.">
+          <Frame title="Let your AI agent pay, without overspending" say="This is a practice run inside your browser. No real money, wallet or network is involved. Nine short steps.">
             <ul className="grid grid-cols-1 gap-2 text-sm text-zinc-300 sm:grid-cols-3">
               <li className="rounded-xl bg-zinc-950 p-3 ring-1 ring-zinc-800">Your rules, checked on every payment</li>
-              <li className="rounded-xl bg-zinc-950 p-3 ring-1 ring-zinc-800">Paid only when the network confirms</li>
-              <li className="rounded-xl bg-zinc-950 p-3 ring-1 ring-zinc-800">The merchant confirms, privately</li>
+              <li className="rounded-xl bg-zinc-950 p-3 ring-1 ring-zinc-800">Paid only after (simulated) confirmations</li>
+              <li className="rounded-xl bg-zinc-950 p-3 ring-1 ring-zinc-800">The merchant checks its invoice</li>
             </ul>
           </Frame>
         )}
         {step === 1 && <PolicyStep />}
         {step === 2 && <BlockedStep blocked={blocked} setBlocked={setBlocked} />}
         {step === 3 && <AllowedStep payment={payment} setPayment={setPayment} />}
-        {step === 4 && <LivePayment id={id} title="Send it, once" say="Press Send privately. On the real test network an operator sends it from outside the browser. A payment is never sent twice." />}
-        {step === 5 && <LivePayment id={id} title="Wait for the network" say="Use the simulate button to add network confirmations. It shows Paid only when the network confirms it, never on a timer. If the network replaces blocks, you see it move back." />}
+        {step === 4 && <LivePayment id={id} title="Send it, once" say="Press the send button to simulate the send. On the test network an operator sends it from outside the browser. A payment is never sent twice." />}
+        {step === 5 && <LivePayment id={id} title="Wait for the network" say="Use the simulate button to add network confirmations. It shows Paid only once enough (simulated) confirmations are in, never on a timer. If the network replaces blocks, you see it move back." />}
         {step === 6 && <MerchantStep id={id} />}
         {step === 7 && <PrivacyStep payment={payment} />}
         {step === last && (

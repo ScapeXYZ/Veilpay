@@ -159,7 +159,7 @@ export default function MerchantPage() {
     <>
       <PageHeader
         title="Merchant portal"
-        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys; shielded payment amounts and parties are not public."
+        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys. In practice mode receipts and confirmations are simulated."
       />
       <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What a receipt check tells you">

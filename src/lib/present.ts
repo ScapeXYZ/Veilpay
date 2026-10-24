@@ -23,7 +23,7 @@ export const STATUS_COPY: Record<PaymentStatus, { label: string; tone: Tone; hel
   authorized: { label: "Approved, not paid", tone: "info", help: "Policy approved it and the amount is reserved. Nothing has been sent yet." },
   submitted: { label: "Submitted", tone: "progress", help: "Handed to the wallet for a shielded send." },
   confirming: { label: "Sent, awaiting confirmation", tone: "progress", help: "Broadcast. Waiting for the required confirmations." },
-  confirmed: { label: "Paid", tone: "success", help: "Confirmed on chain to the required depth." },
+  confirmed: { label: "Paid", tone: "success", help: "The server reports it confirmed to the required depth." },
   failed: { label: "Failed", tone: "danger", help: "A definitive failure. The reservation was released." },
   expired: { label: "Expired", tone: "neutral", help: "The approval expired before it was executed. The reservation was released." },
 };
