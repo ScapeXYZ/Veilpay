@@ -175,7 +175,7 @@ function OnboardingPanel({ step, hideForever, onHideForever, onBack, onNext, onS
           <span key={x.id} className={clsx("h-1 flex-1 rounded-full", i <= step ? "bg-accent-400" : "bg-zinc-700")} />
         ))}
       </div>
-      <h2 id="onboarding-title" ref={heading} tabIndex={-1} className="mt-4 flex items-center gap-2 text-base font-semibold text-zinc-50 focus:outline-none">
+      <h2 id="onboarding-title" ref={heading} tabIndex={-1} style={{ outline: "none" }} className="mt-4 flex items-center gap-2 text-base font-semibold text-zinc-50 focus:outline-none">
         <Icon size={17} className="shrink-0 text-accent-300" aria-hidden /> {s.title}
       </h2>
       <p id="onboarding-body" className="mt-1.5 text-sm leading-relaxed text-zinc-300">{s.body}</p>

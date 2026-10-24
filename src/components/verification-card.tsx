@@ -48,7 +48,7 @@ export function VerificationCard({ paymentId }: { paymentId: string }) {
         <div>
           <dt className="text-xs text-zinc-500">Confirmations</dt>
           <dd className="tabular-nums">
-            {v.confirmations} of {v.confirmationsRequired}
+            {v.confirmations} of {v.confirmationsRequired}{v.method === "mock" && <span className="text-xs text-zinc-500"> (simulated)</span>}
           </dd>
         </div>
         <div>

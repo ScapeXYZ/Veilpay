@@ -207,7 +207,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
               <dt className="text-zinc-500">Confirmations</dt>
               <dd className="tabular-nums">{p.confirmations ?? 0}{simulated && <span className="text-xs text-zinc-500"> (simulated)</span>}</dd>
               <dt className="text-zinc-500">Privacy</dt>
-              <dd>{!p.pool ? "Not sent yet" : simulated ? `Simulated ${p.pool} pool send, nothing real moved` : `${p.pool} pool, as reported by VeilPay`}</dd>
+              <dd>{!p.pool ? (sentAlready ? "Not reported by the server" : "Not sent yet") : simulated ? `Simulated ${p.pool} pool send, nothing real moved` : `${p.pool} pool, as reported by VeilPay`}</dd>
               <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
               <dd className="truncate font-mono text-xs" data-testid="tx-ref">
                 {p.mockRef ? (
