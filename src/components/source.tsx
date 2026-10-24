@@ -1,38 +1,58 @@
 "use client";
 
-import { FlaskConical, Radio, ShieldQuestion } from "lucide-react";
-import { useHealth } from "@/lib/api/hooks";
-import { useDataSource } from "@/lib/api/data-source";
+import { Eye, FlaskConical, Lock, Radio, ShieldQuestion, Wrench } from "lucide-react";
+import { useDataSource, useNetworkMode } from "@/lib/api/data-source";
 import type { DataSource } from "@/lib/present";
 import { Badge } from "./ui";
 
-/** Persistent banner: contract MOCK MODE rule ("UI shows a persistent MOCK banner"). Never dismissible. */
+/**
+ * Persistent network-mode banner (contract MOCK MODE rule + Phase 1 mode rules). Never
+ * dismissible. Mainnet always reads "Read-only · Execution disabled".
+ */
 export function MockBanner() {
-  const source = useDataSource();
-  const { data: health, isError } = useHealth();
-  if (source === "mock") {
+  const m = useNetworkMode();
+  const base = "sticky top-0 z-50 flex items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-semibold tracking-wide";
+  if (m.kind === "mock")
     return (
-      <div data-testid="mock-banner" className="sticky top-0 z-50 flex items-center justify-center gap-2 bg-fuchsia-700 px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-wider text-white">
+      <div data-testid="mock-banner" role="note" className={`${base} bg-fuchsia-800 text-white`}>
         <FlaskConical size={14} aria-hidden />
-        Mock mode: simulated backend. No wallet, no chain, no real funds. Every txid, confirmation and receipt here is fake.
+        <span>
+          <span className="uppercase">Simulation · Mock backend · No funds move.</span>{" "}
+          <span className="hidden font-normal sm:inline">Every txid, confirmation and receipt here is fake.</span>
+        </span>
       </div>
     );
-  }
-  if (source === "disabled") return (
-    <div data-testid="disabled-banner" className="sticky top-0 z-50 bg-amber-900 px-4 py-1.5 text-center text-xs font-semibold text-white">
-      Broadcasting disabled. This backend cannot send funds or independently verify merchant receipts.
-    </div>
-  );
-  if (source === "unknown" || isError) {
+  if (m.kind === "mainnet_readonly")
     return (
-      <div data-testid="unknown-banner" className="sticky top-0 z-50 bg-zinc-700 px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-wider text-white">
-        Backend unreachable: data source unknown. Nothing on screen should be treated as real.
+      <div data-testid="mainnet-banner" role="note" className={`${base} bg-accent-900 text-accent-200`}>
+        <Lock size={14} aria-hidden />
+        <span>
+          <span className="uppercase">Mainnet · Read-only · Execution disabled.</span>{" "}
+          <span className="hidden font-normal sm:inline">Observations only; VeilPay does not send on mainnet.</span>
+        </span>
       </div>
     );
-  }
+  if (m.kind === "disabled")
+    return (
+      <div data-testid="disabled-banner" role="note" className={`${base} bg-amber-900 text-white`}>
+        Broadcasting disabled. This backend cannot send funds or independently verify merchant receipts.
+      </div>
+    );
+  if (m.kind === "unknown")
+    return (
+      <div data-testid="unknown-banner" role="note" className={`${base} bg-zinc-700 uppercase text-white`}>
+        <ShieldQuestion size={14} aria-hidden /> {m.label}. Nothing on screen should be treated as real.
+      </div>
+    );
+  if (m.kind === "testnet_manual")
+    return (
+      <div data-testid="real-banner" role="note" className={`${base} bg-emerald-900 text-emerald-50`}>
+        <Wrench size={14} aria-hidden /> <span className="uppercase">Testnet · Test funds · Operator execution</span>
+      </div>
+    );
   return (
-    <div data-testid="real-banner" className="sticky top-0 z-50 bg-emerald-800 px-4 py-1 text-center text-xs font-semibold uppercase tracking-wider text-white">
-      Real {health?.network} wallet ({health?.walletBackend}). Testnet funds only, not production.
+    <div data-testid="real-banner" role="note" className={`${base} bg-emerald-900 uppercase text-emerald-50`}>
+      <Radio size={14} aria-hidden /> {m.detail}
     </div>
   );
 }
@@ -40,6 +60,7 @@ export function MockBanner() {
 /** Per-element source tag, used next to every number, status and receipt. */
 export function SourceTag({ source: forced, className }: { source?: DataSource; className?: string }) {
   const ambient = useDataSource();
+  const mode = useNetworkMode();
   const source = forced ?? ambient;
   if (source === "mock")
     return (
@@ -54,9 +75,25 @@ export function SourceTag({ source: forced, className }: { source?: DataSource; 
         <Radio size={11} aria-hidden /> REAL TESTNET
       </Badge>
     );
+  if (!forced && mode.kind === "mainnet_readonly")
+    return (
+      <Badge tone="info" className={className} testId="source-mainnet">
+        <Eye size={11} aria-hidden /> MAINNET OBSERVATION
+      </Badge>
+    );
   return (
     <Badge tone="neutral" className={className} testId="source-unknown">
       <ShieldQuestion size={11} aria-hidden /> UNKNOWN SOURCE
     </Badge>
+  );
+}
+
+/** Explains a disabled action in place. Rendered instead of / next to any write control. */
+export function WriteBlocked({ reason, testId = "write-blocked" }: { reason: string | null; testId?: string }) {
+  if (!reason) return null;
+  return (
+    <p data-testid={testId} className="flex items-start gap-1.5 text-xs text-accent-200">
+      <Lock size={12} className="mt-0.5 shrink-0" aria-hidden /> {reason}
+    </p>
   );
 }

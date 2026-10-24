@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  /** Pre-Phase-1 deep links keep working (reviewed aliases, not permanent). */
+  async redirects() {
+    return ["policy", "payments", "merchant", "privacy"].map((r) => ({ source: `/${r}`, destination: `/app/${r}`, permanent: false }));
+  },
   async rewrites() {
     return backend ? [{ source: "/api/:path*", destination: `${backend}/:path*` }] : [];
   },

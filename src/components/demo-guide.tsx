@@ -49,7 +49,7 @@ export function DemoGuide() {
         {cur.say} <span className="text-xs text-zinc-500">({cur.ctx} view)</span>
       </p>
       {step < DEMO_STEPS.length - 1 && (
-        <Link href={DEMO_STEPS[step + 1].href} onClick={() => setStep(step + 1)} className="mt-1 inline-block text-xs text-amber-300 hover:text-amber-200" data-testid="demo-next">
+        <Link href={DEMO_STEPS[step + 1].href} onClick={() => setStep(step + 1)} className="mt-1 inline-block text-xs text-accent-300 hover:text-accent-200" data-testid="demo-next">
           Next: {DEMO_STEPS[step + 1].title} →
         </Link>
       )}

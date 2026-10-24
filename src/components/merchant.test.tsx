@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import MerchantPage from "@/app/merchant/page";
+import MerchantPage from "@/app/app/merchant/page";
 import { Providers } from "@/app/providers";
 import { MockApiClient } from "@/lib/api/mock";
 import { errorText } from "@/lib/api/hooks";

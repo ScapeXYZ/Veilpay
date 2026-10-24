@@ -212,7 +212,7 @@ function Lookup() {
                 key={id}
                 data-testid={`pick-${id}`}
                 onClick={() => setActive(id)}
-                className={`rounded px-2 py-0.5 font-mono text-xs ${id === current ? "bg-amber-400 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
+                className={`rounded px-2 py-0.5 font-mono text-xs ${id === current ? "bg-accent-400 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
               >
                 {id}
               </button>

@@ -1,118 +1,108 @@
 "use client";
 
-import { ArrowRight, Bot, Store } from "lucide-react";
+import { ArrowRight, Ban, CheckCircle2, EyeOff, FileCheck2, Lock, ScrollText, ShieldCheck, Store } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { AgentSummary } from "@/components/agent-summary";
-import { DecisionPanel, PaymentDetail } from "@/components/payment";
-import { RequestComposer, type RequestPreset } from "@/components/request-composer";
-import { PageHeader, RequireContext } from "@/components/shell";
-import { Card, Zec } from "@/components/ui";
-import { useApi, usePayment, usePayments } from "@/lib/api/hooks";
-import { SEED_IDS } from "@/lib/api/fixtures";
-import type { Payment } from "@/lib/contract/schemas";
+import type { ReactNode } from "react";
+import { PublicShell } from "@/components/public-shell";
+import { Badge } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
 
-function presets(mock: boolean): { blocked: RequestPreset; happy: RequestPreset } {
-  // Mock-only invoice ids; in live mode the invoice id comes from the merchant view.
-  return {
-    blocked: { invoiceId: mock ? SEED_IDS.blockedDemoInvoice : "", zec: "0.75", reference: "INV-1002 espresso machine" },
-    happy: { invoiceId: mock ? SEED_IDS.happyDemoInvoice : "", zec: "0.12", reference: "INV-1001 single-origin beans" },
-  };
+function ModeNote() {
+  const m = useNetworkMode();
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-xs" data-testid="landing-mode">
+      <div className="flex items-center gap-1.5 font-semibold text-zinc-200">
+        <Lock size={12} aria-hidden /> Mainnet observation only · execution disabled
+      </div>
+      <div className="text-zinc-400">
+        This deployment: <span className="text-zinc-200">{m.label}</span>
+      </div>
+    </div>
+  );
 }
 
-function BlockedOpener() {
-  const api = useApi();
-  const { data: list } = usePayments();
-  const [mine, setMine] = useState<Payment | null>(null);
-  const latestRejected = list?.items.find((p) => p.status === "rejected");
-  const shown = mine?.status === "rejected" ? mine : latestRejected;
-  const p = presets(api.mode === "mock");
+function PreviewRow({ tone, icon, title, amount, note, label }: { tone: "blocked" | "allowed"; icon: ReactNode; title: string; amount: string; note: string; label: string }) {
   return (
-    <Card testId="blocked-opener" className="border-rose-950 bg-gradient-to-b from-rose-950/30 to-zinc-900/60">
-      <div className="flex items-start gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-950 text-rose-300">
-          <Bot size={20} aria-hidden />
+    <div className={`rounded-xl border p-4 ${tone === "blocked" ? "border-rose-900/70 bg-rose-950/20" : "border-emerald-900/70 bg-emerald-950/15"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+          {icon} {title}
         </div>
-        <div>
-          <h2 className="text-lg font-semibold">The agent tried to overspend. The backend said no.</h2>
-          <p className="mt-1 text-sm text-zinc-400">
-            Policy lives on the server, not in the agent and not in this page. Every request is checked before a single zatoshi can move.
-          </p>
-        </div>
+        <Badge tone="neutral" className="!bg-fuchsia-950 !text-fuchsia-300 !ring-fuchsia-800">{label}</Badge>
       </div>
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div>
-          {shown ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="text-zinc-300">{shown.reference}</span>
-                <Zec zat={shown.amountZat} className="text-lg text-zinc-50" />
-              </div>
-              <DecisionPanel d={shown.decision} compact />
-              <p className="text-xs text-zinc-500">Status: blocked by policy. No funds moved, nothing reserved.</p>
+      <div className="mt-2 font-mono text-xl text-zinc-50 tabular">{amount}</div>
+      <p className="mt-1 text-xs text-zinc-400">{note}</p>
+    </div>
+  );
+}
+
+function Feature({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+      <div className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-accent-950 text-accent-300 ring-1 ring-accent-900">{icon}</div>
+      <h3 className="font-semibold text-zinc-50">{title}</h3>
+      <p className="mt-1.5 text-sm text-zinc-400">{children}</p>
+    </div>
+  );
+}
+
+export default function Landing() {
+  return (
+    <PublicShell>
+      <section className="veil">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 py-14 lg:grid-cols-[1.1fr_0.9fr] lg:px-8 lg:py-24">
+          <div>
+            <Badge tone="info" className="mb-5">Shielded ZEC · Zecathon 2026</Badge>
+            <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-zinc-50 sm:text-5xl lg:text-[54px]" data-testid="hero-title">
+              Give AI agents permission to pay, not permission to overspend.
+            </h1>
+            <p className="mt-5 max-w-xl text-lg text-zinc-300">Set limits. Inspect decisions. Verify shielded payment receipts.</p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/demo" data-testid="cta-demo" className="inline-flex items-center gap-2 rounded-lg bg-accent-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
+                Explore the demo <ArrowRight size={15} aria-hidden />
+              </Link>
+              <Link href="/app" data-testid="cta-dashboard" className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-900">
+                View dashboard
+              </Link>
             </div>
-          ) : (
-            <p className="text-sm text-zinc-500">No blocked request yet. Replay one on the right.</p>
-          )}
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Replay it live</div>
-          <RequestComposer preset={p.blocked} cta="Agent: request this payment" onResult={setMine} testId="replay-blocked" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function HappyPath() {
-  const api = useApi();
-  const [created, setCreated] = useState<Payment | null>(null);
-  const { data: live } = usePayment(created?.id ?? null);
-  const p = live ?? created;
-  return (
-    <Card testId="happy-path" title="Then a request inside the policy">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-        <RequestComposer preset={presets(api.mode === "mock").happy} cta="Agent: request this payment" onResult={setCreated} testId="request-happy" />
-        <div>
-          {p ? (
-            <PaymentDetail p={p} />
-          ) : (
-            <ol className="space-y-2 text-sm text-zinc-400">
-              <li>1. Agent requests. Backend checks cap, budget, merchant, invoice.</li>
-              <li>2. Approved = reserved, not paid. Execute sends once, shielded.</li>
-              <li>3. Only confirmed on chain counts as paid.</li>
-              <li>4. The merchant verifies the receipt for this invoice with their own key, no customer key handed over.</li>
-            </ol>
-          )}
-          {p && (p.status === "confirmed" || p.status === "confirming") && (
-            <Link href="/merchant" className="mt-4 inline-flex items-center gap-1.5 text-sm text-amber-300 hover:text-amber-200" data-testid="go-merchant">
-              <Store size={14} aria-hidden /> Verify it as the merchant <ArrowRight size={14} aria-hidden />
-            </Link>
-          )}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-export default function Overview() {
-  return (
-    <>
-      <PageHeader
-        title="Agent spending, shielded and on a leash"
-        subtitle="An AI agent pays merchants in shielded ZEC. The backend enforces the owner's policy, the chain hides the details, and the merchant verifies receipt on their side."
-      />
-      <RequireContext ctx="customer">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
-          <div className="flex flex-col gap-5">
-            <BlockedOpener />
-            <HappyPath />
           </div>
-          <div className="flex flex-col gap-5">
-            <AgentSummary />
+          <div className="flex flex-col gap-3" aria-label="Product preview (simulation)">
+            <PreviewRow tone="blocked" label="Simulation" icon={<Ban size={16} className="text-rose-400" aria-hidden />} title="Blocked: over the per-payment cap" amount="0.75000000 ZEC" note="Cap 0.25 ZEC. No transfer happened, nothing was reserved." />
+            <PreviewRow tone="allowed" label="Simulation" icon={<CheckCircle2 size={16} className="text-emerald-400" aria-hidden />} title="Allowed: policy approved · not paid" amount="0.12000000 ZEC" note="Staged for an operator. Paid only once confirmations are observed." />
+            <ModeNote />
           </div>
         </div>
-      </RequireContext>
-    </>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-12 lg:px-8">
+        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="How it works">
+          {[
+            { n: 1, t: "Set policy", d: "Per-payment cap, total budget, allowed merchants. Enforced by the backend.", i: <ShieldCheck size={16} aria-hidden /> },
+            { n: 2, t: "Agent requests", d: "Each request gets a decision with the exact limit it hit, or a reservation.", i: <ScrollText size={16} aria-hidden /> },
+            { n: 3, t: "Merchant checks receipt", d: "The merchant verifies the shielded receipt for its own invoice.", i: <Store size={16} aria-hidden /> },
+          ].map((s) => (
+            <li key={s.n} className="flex gap-3 rounded-2xl border border-zinc-800 p-4">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-zinc-800 font-mono text-xs text-zinc-200">{s.n}</span>
+              <div>
+                <div className="flex items-center gap-1.5 font-semibold text-zinc-50">{s.i} {s.t}</div>
+                <p className="mt-1 text-sm text-zinc-400">{s.d}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 pb-16 md:grid-cols-3 lg:px-8">
+        <Feature icon={<ShieldCheck size={17} aria-hidden />} title="Policy protection">
+          Policy lives on the server, not in the agent and not in this page. Every request is checked, and checked again before anything is staged.
+        </Feature>
+        <Feature icon={<EyeOff size={17} aria-hidden />} title="Selective privacy">
+          Shielded payments keep amount, sender, recipient and memo off the public chain. Timing, fees and transaction structure can still be visible.
+        </Feature>
+        <Feature icon={<FileCheck2 size={17} aria-hidden />} title="Honest evidence">
+          A confirmation counts only when the backend observes it. Policy approved, submitted, observed and merchant verified are shown as different states.
+        </Feature>
+      </section>
+    </PublicShell>
   );
 }
