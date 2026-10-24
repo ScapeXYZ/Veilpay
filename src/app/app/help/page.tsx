@@ -29,10 +29,10 @@ export default function HelpPage() {
         <Card testId="help-intro">
           <h2 className="text-lg font-semibold text-zinc-50">VeilPay in 30 seconds</h2>
           <ol className="mt-3 space-y-2.5 text-[15px] text-zinc-300">
-            <li className="flex gap-3"><span className="font-mono text-accent-300">1</span>You set spending rules for your AI agent: a max per payment, a total budget, and which merchants it may pay.</li>
-            <li className="flex gap-3"><span className="font-mono text-accent-300">2</span>When the agent wants to pay an invoice, VeilPay checks the rules. Over a limit? Blocked, with the exact reason, and no money moves.</li>
-            <li className="flex gap-3"><span className="font-mono text-accent-300">3</span>Approved payments are sent privately in Zcash. They show as paid only once the network confirms them.</li>
-            <li className="flex gap-3"><span className="font-mono text-accent-300">4</span>The merchant checks on its side that its invoice was paid. Nobody else sees the amount or who paid.</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">1</span>You set spending rules for your AI agent: a max per payment, a total budget, and which merchants it may pay.</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">2</span>When the agent wants to pay an invoice, VeilPay checks the rules. Over a limit? Blocked, with the exact reason, and no money moves.</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">3</span>Approved payments are sent privately in Zcash. They show as paid only once the network confirms them.</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">4</span>The merchant checks on its side that its invoice was paid. Nobody else sees the amount or who paid.</li>
           </ol>
         </Card>
         <Card testId="help-demo" className="flex flex-col">

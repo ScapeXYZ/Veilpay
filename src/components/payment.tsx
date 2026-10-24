@@ -22,15 +22,14 @@ import {
 } from "@/lib/present";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
 import { SourceTag, WriteBlocked } from "./source";
-import { Badge, Button, Card, ErrorBox, Notice, Zec } from "./ui";
+import { Badge, Button, Card, ErrorBox, Notice, StatusBadge, Zec } from "./ui";
 
 export function PaymentBadge({ p }: { p: Payment }) {
   const b = paymentBadge(p);
   return (
-    <Badge tone={b.tone} testId={`badge-${p.id}`}>
-      {b.tone === "review" && <Wrench size={11} aria-hidden />}
+    <StatusBadge tone={b.tone} testId={`badge-${p.id}`}>
       {b.label}
-    </Badge>
+    </StatusBadge>
   );
 }
 
@@ -74,7 +73,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           ))}
         </ul>
       )}
-      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. The browser never evaluates policy; it shows the backend&apos;s decision.</p>}
+      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
     </div>
   );
 }
@@ -97,7 +96,7 @@ export function Timeline({ p }: { p: Payment }) {
             />
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className={clsx("font-medium", last ? "text-zinc-50" : "text-zinc-300")}>{timelineTitle(e)}</span>
-              {back && <Badge tone="warning">backward move</Badge>}
+              {back && <Badge tone="warning">moved back</Badge>}
               <span className="text-xs text-zinc-500">{fmtTime(e.at)}</span>
             </div>
             {e.note && <p className="mt-0.5 text-xs text-zinc-400">{e.note}</p>}
@@ -132,7 +131,7 @@ function FailureNotice({ p }: { p: Payment }) {
     <Notice tone="danger" title={<span className="flex items-center gap-2"><ShieldAlert size={15} aria-hidden />Failed: {FAILURE_COPY[p.failure.code]}</span>} testId="failure-definitive">
       <p>{p.failure.message}</p>
       <p className="mt-1 text-xs text-zinc-400">
-        Definitive failure reported by the backend (<code>{p.failure.code}</code>). The reserved amount was released.
+        This payment did not go through (<code>{p.failure.code}</code>). The set-aside amount was released.
       </p>
     </Notice>
   );
@@ -198,47 +197,47 @@ export function PaymentDetail({ p }: { p: Payment }) {
         </Card>
         <div className="flex flex-col gap-4">
           <DecisionPanel d={p.decision} />
-          <Card title="Send record" className="!bg-zinc-950/40" testId="send-record">
+          <Card title="Payment details" className="!bg-zinc-950/40" testId="send-record">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-zinc-500">Status</dt>
               <dd>{paymentBadge(p).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
-              <dd className="font-mono">{p.confirmations ?? 0}</dd>
-              <dt className="text-zinc-500">Pool</dt>
-              <dd>{p.pool ?? "not sent"}</dd>
-              <dt className="text-zinc-500">{p.mockRef ? "Mock ref" : "Txid"}</dt>
+              <dd className="tabular-nums">{p.confirmations ?? 0}</dd>
+              <dt className="text-zinc-500">Privacy</dt>
+              <dd>{p.pool ? `Private (${p.pool} pool)` : "Not sent yet"}</dd>
+              <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
               <dd className="truncate font-mono text-xs" data-testid="tx-ref">
                 {p.mockRef ? (
                   <>
-                    {p.mockRef} <Badge tone="neutral" className="ml-1">not a txid</Badge>
+                    {p.mockRef} <Badge tone="neutral" className="ml-1">practice only, not a real transaction</Badge>
                   </>
                 ) : p.txid ? (
                   <>
                     {p.txid}
                     {awaitingOperatorConfirmation(op) && (
-                      <Badge tone="warning" className="ml-1" testId="txid-not-broadcast">signed, not broadcast</Badge>
+                      <Badge tone="warning" className="ml-1" testId="txid-not-broadcast">signed, not sent yet</Badge>
                     )}
                   </>
                 ) : (
-                  "none"
+                  <span className="font-sans text-sm text-zinc-400">None yet</span>
                 )}
               </dd>
               {op && (
                 <>
-                  <dt className="text-zinc-500">Wallet op</dt>
+                  <dt className="text-zinc-500">Send step</dt>
                   <dd data-testid="wallet-op">
-                    {op.needsOperator ? "Requires operator review" : WALLET_OP_COPY[op.state]} · attempt {op.attempt}
+                    {op.needsOperator ? "Requires operator review" : WALLET_OP_COPY[op.state]} · try {op.attempt}
                   </dd>
                   {op.phase && (
                     <>
-                      <dt className="text-zinc-500">Operator phase</dt>
+                      <dt className="text-zinc-500">Operator step</dt>
                       <dd data-testid="wallet-op-phase">{WALLET_PHASE_COPY[op.phase]}</dd>
                     </>
                   )}
                   {op.feeZat && (
                     <>
                       <dt className="text-zinc-500">Network fee</dt>
-                      <dd><Zec zat={op.feeZat} /> <span className="text-xs text-zinc-500">operator-approved, outside the policy budget</span></dd>
+                      <dd><Zec zat={op.feeZat} /> <span className="text-xs text-zinc-500">approved by the operator, not taken from the budget</span></dd>
                     </>
                   )}
                   {op.lastReconciledAt && (
@@ -254,7 +253,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
             </dl>
             {sentAlready && !awaitingOperatorConfirmation(op) && (
               <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
-                <CircleDot size={12} aria-hidden /> Broadcast or in flight: pausing the agent or changing policy does not affect this payment.
+                <CircleDot size={12} aria-hidden /> Already on its way: pausing the agent or changing the rules does not affect this payment.
               </p>
             )}
           </Card>

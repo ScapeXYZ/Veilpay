@@ -41,7 +41,7 @@ describe("Invoice payment request safety", () => {
     expect(container.querySelector("svg")).toBeNull();
     expect(screen.queryByLabelText("Payment request")).toBeNull();
     expect(screen.getByText(/DEMO ONLY/)).toBeInTheDocument();
-    expect(screen.getByText(/does not confirm payment/)).toBeInTheDocument();
+    expect(screen.getByText(/does not mean it is paid/)).toBeInTheDocument();
   });
   it("nonspendable payload overrides an otherwise valid address", () => {
     const mock: Invoice = { ...invoice, paymentPayload: { format: "veilpay-mock-v1", uri: "veilpay-mock:inv_test?amountZat=12345678", mock: true, spendable: false } };

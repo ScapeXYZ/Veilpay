@@ -60,7 +60,7 @@ export function AgentSummary({ withControls = false }: { withControls?: boolean 
           </span>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          {u.approvedCount} approved · {u.pendingCount} pending · {u.rejectedCount} blocked · policy v{a.policy.version}. Numbers come from the backend; the browser never sums them.
+          {u.approvedCount} approved · {u.pendingCount} not sent yet · {u.rejectedCount} blocked by rules · rules version {a.policy.version}. Totals come from the VeilPay server.
         </p>
       </div>
       {withControls && (
@@ -75,7 +75,7 @@ export function AgentSummary({ withControls = false }: { withControls?: boolean 
             {a.status === "active" ? "Pause agent" : "Resume agent"}
           </Button>
           <p className="mt-2 text-xs text-zinc-500">
-            Pausing blocks new requests and rejects approved-but-unsent payments at execute. Payments already broadcast are not cancelled: a shielded send cannot be recalled.
+            Pausing stops new payments and cancels approved ones that have not been sent. Payments already sent cannot be pulled back.
           </p>
           {st.error && <div className="mt-2"><ErrorBox>{errorText(st.error)}</ErrorBox></div>}
         </div>

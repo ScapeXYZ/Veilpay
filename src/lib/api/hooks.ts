@@ -208,20 +208,20 @@ export function useAcknowledge() {
 const ERROR_COPY = {
   VALIDATION_FAILED: "Check the details you entered and try again.",
   UNAUTHENTICATED: "Your session has ended. Reload the page to start again.",
-  WRONG_CONTEXT: "Switch to the correct customer or merchant view to continue.",
+  WRONG_CONTEXT: "Switch to the owner or merchant view to continue.",
   NOT_FOUND: "No payment found with that ID. Check it and try again.",
   VERSION_CONFLICT: "These details changed. Reload them before saving again.",
   IDEMPOTENCY_MISMATCH: "This request changed after it was submitted. Check its status before creating another.",
   INVALID_TRANSITION: "This action is not available for the current payment status. Refresh to see the latest status.",
-  POLICY_REJECTED: "The spending policy blocked this payment. Review the limits and allowed merchants.",
-  NOT_YET_RECEIVED: "Payment has not been received yet. Wait for backend verification before acknowledging it.",
-  ALREADY_ACKNOWLEDGED: "This payment has already been acknowledged. Refresh to see its receipt.",
+  POLICY_REJECTED: "Your spending rules blocked this payment. Check the limits and approved merchants.",
+  NOT_YET_RECEIVED: "The payment has not arrived yet. Wait until it is confirmed before marking it received.",
+  ALREADY_ACKNOWLEDGED: "This payment is already marked as received. Refresh to see it.",
   WALLET_UNAVAILABLE: "The wallet is temporarily unavailable. Check this payment's status before trying again.",
   INTERNAL: "The service could not complete this action. Check the latest status before trying again.",
   OUTCOME_UNKNOWN: "The payment outcome is still being checked. Do not resend it.",
-  VERIFICATION_UNAVAILABLE: "Receipt verification is not available for this payment yet. Nothing has been acknowledged.",
+  VERIFICATION_UNAVAILABLE: "The receipt cannot be checked for this payment yet. Nothing has been marked as received.",
   CSRF_FAILED: "Your session could not be verified. Reload the page before trying again.",
-  AMOUNT_MISMATCH: "The received amount does not match this invoice. Review the receipt before acknowledging it.",
+  AMOUNT_MISMATCH: "The amount received does not match this invoice. Check the receipt before marking it received.",
 } as const;
 
 export function errorText(e: unknown): string {

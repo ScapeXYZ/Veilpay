@@ -37,7 +37,7 @@ export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: bool
           <p role="status" className="mt-2 text-xs text-emerald-300">{copied ? "Ready to share with your customer." : ""}</p>
         </>
       ) : <div className="mt-3 rounded-lg border border-dashed border-zinc-600 p-4 text-sm text-zinc-300" data-testid="invoice-no-qr">{!payable ? "This invoice is no longer payable. Create a new invoice for a new payment." : demo || invoice.paymentPayload?.format === "veilpay-mock-v1" ? "DEMO ONLY. No payment QR or wallet request is generated. Do not send funds." : "No validated, unexpired testnet payment request is available. No payment QR is generated; anything that fails validation fails closed."}</div>}
-      <p className="mt-2 text-xs text-zinc-400">Sharing a request does not confirm payment. Status changes only when the backend verifies receipt.</p>
+      <p className="mt-2 text-xs text-zinc-400">Sharing this does not mean it is paid. The status changes only once the payment is confirmed.</p>
       {invoice.expiresAt && <p className="mt-1 text-xs text-zinc-400">Expires: {fmtTime(invoice.expiresAt)}</p>}
       {error && <ErrorBox>{error}</ErrorBox>}
     </div>

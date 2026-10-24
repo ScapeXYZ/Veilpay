@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Clock, Gauge, ListChecks, Pause, Play, ShieldCheck, UserCheck } from "lucide-react";
+import { CalendarClock, CheckCircle2, Clock, Gauge, ListChecks, Pause, Play, ShieldCheck, UserCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag, WriteBlocked } from "@/components/source";
@@ -80,12 +80,12 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
       <Card testId="policy-form" title={<span className="flex items-center gap-2">Spending rules · version {a.policy.version}{ro && <Badge tone="info">view only</Badge>}</span>} action={<span className="text-xs text-zinc-500">updated {fmtTime(a.policy.updatedAt)}</span>}>
         <Section icon={<Gauge size={15} aria-hidden />} title="Max per payment" help="The most the agent can pay in one go. Anything above is blocked, and you see exactly why.">
           <Field label="Max per payment (ZEC)">
-            <input className={`${inputCls} font-mono`} value={cap} onChange={(e) => setCap(e.target.value)} data-testid="cap-input" readOnly={ro} inputMode="decimal" />
+            <input className={`${inputCls} tabular-nums`} value={cap} onChange={(e) => setCap(e.target.value)} data-testid="cap-input" readOnly={ro} inputMode="decimal" />
           </Field>
         </Section>
         <Section icon={<ShieldCheck size={15} aria-hidden />} title="Total budget" help="Everything the agent may spend overall. If you lower it below what is already spent or set aside, new payments wait until it fits.">
           <Field label="Budget (ZEC)">
-            <input className={`${inputCls} font-mono`} value={budget} onChange={(e) => setBudget(e.target.value)} readOnly={ro} inputMode="decimal" />
+            <input className={`${inputCls} tabular-nums`} value={budget} onChange={(e) => setBudget(e.target.value)} readOnly={ro} inputMode="decimal" />
           </Field>
           <div className="mt-3">
             <Meter total={a.policy.totalBudgetZat} parts={[{ pct: spentPct, cls: "bg-emerald-500", label: "spent" }, { pct: resPct, cls: "bg-sky-500", label: "reserved" }]} />
@@ -101,12 +101,12 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
         </Section>
         <Section icon={<ListChecks size={15} aria-hidden />} title="Approved merchants" help="Shops the agent is allowed to pay, separated by commas. Payments to anyone else are blocked.">
           <Field label="Merchant IDs">
-            <input className={`${inputCls} font-mono`} value={merchants} onChange={(e) => setMerchants(e.target.value)} readOnly={ro} />
+            <input className={`${inputCls} tabular-nums`} value={merchants} onChange={(e) => setMerchants(e.target.value)} readOnly={ro} />
           </Field>
         </Section>
         <Section icon={<Clock size={15} aria-hidden />} title="Approval time limit" help="How long an approved payment keeps its money set aside before it lapses.">
           <Field label="Time limit (seconds)">
-            <input className={`${inputCls} font-mono`} value={ttl} onChange={(e) => setTtl(e.target.value)} readOnly={ro} inputMode="numeric" />
+            <input className={`${inputCls} tabular-nums`} value={ttl} onChange={(e) => setTtl(e.target.value)} readOnly={ro} inputMode="numeric" />
           </Field>
         </Section>
         <Section icon={<UserCheck size={15} aria-hidden />} title="Your approval" help="Asking you before each payment.">
@@ -132,7 +132,7 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
         ) : (
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Button onClick={prepare} data-testid="review-policy">Review changes</Button>
-            {saved && <span className="text-sm text-emerald-300" data-testid="policy-saved">Saved. Rules are now version {saved}.</span>}
+            {saved && <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="policy-saved"><CheckCircle2 size={15} aria-hidden /> Saved. Rules are now version {saved}.</span>}
           </div>
         )}
         {inputErr && <div className="mt-3"><ErrorBox>{inputErr}</ErrorBox></div>}

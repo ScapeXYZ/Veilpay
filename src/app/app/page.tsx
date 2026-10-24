@@ -52,7 +52,7 @@ function ModeCard() {
           <div><dt className="text-zinc-500">Latest block (wallet)</dt><dd className="font-mono text-zinc-200">{h.chainHeight != null ? h.chainHeight.toLocaleString("en-US") : "Unavailable"}</dd></div>
           <div><dt className="text-zinc-500">Independent block check</dt><dd className="text-zinc-200">{h.chainWatcher.supported === false ? "Not available" : h.chainWatcher.lastBlockAt ? `last block ${fmtTime(h.chainWatcher.lastBlockAt)}` : "Unavailable"}</dd></div>
           <div><dt className="text-zinc-500"><Term k="safetyCheck">Last safety check</Term></dt><dd className="text-zinc-200">{h.reconciler.lastRunAt ? fmtTime(h.reconciler.lastRunAt) : "Not run yet"}</dd></div>
-          <div><dt className="text-zinc-500"><Term k="confirmations">Confirmations needed</Term></dt><dd className="font-mono text-zinc-200">{h.confirmationsRequired}</dd></div>
+          <div><dt className="text-zinc-500"><Term k="confirmations">Confirmations needed</Term></dt><dd className="tabular-nums text-zinc-200">{h.confirmationsRequired}</dd></div>
         </dl>
       )}
       <p className="mt-3 text-[11px] text-zinc-500">Block numbers are what the wallet reports. One number alone does not mean the wallet is fully up to date.</p>

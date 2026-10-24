@@ -113,7 +113,7 @@ function StatusStrip() {
       {h && (
         <span className="tabular">
           {h.network === "testnet" ? <Term k="testnet">Test network</Term> : h.network === "mainnet" ? <Term k="mainnet">Main network</Term> : h.network} · wallet {WALLET_WORD[h.wallet]}
-          {h.chainHeight != null && <> · block <span className="font-mono text-zinc-300">{h.chainHeight.toLocaleString("en-US")}</span></>}
+          {h.chainHeight != null && <> · block <span className="tabular-nums text-zinc-300">{h.chainHeight.toLocaleString("en-US")}</span></>}
         </span>
       )}
       {!m.canWrite && <span className="inline-flex items-center gap-1 text-accent-200"><Lock size={11} aria-hidden /> read-only</span>}

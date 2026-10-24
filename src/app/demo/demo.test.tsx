@@ -15,7 +15,7 @@ describe("/demo", () => {
 
   it("is labelled a simulation on every frame", async () => {
     render(<DemoPage />);
-    expect(await screen.findByTestId("mock-banner")).toHaveTextContent(/no funds move/i);
+    expect(await screen.findByTestId("mock-banner")).toHaveTextContent(/no real money moves/i);
     fireEvent.click(screen.getByRole("button", { name: /Skip to end/ }));
     expect(screen.getByTestId("demo-final")).toHaveTextContent(/Mainnet is read-only/);
   });

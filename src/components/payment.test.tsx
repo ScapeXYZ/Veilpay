@@ -18,7 +18,7 @@ const renderDetail = (p: Payment) =>
 describe("PaymentDetail", () => {
   it("labels the wallet operation with readable operator-review copy", () => {
     renderDetail(seed("pay_operator00001"));
-    expect(screen.getByTestId("wallet-op")).toHaveTextContent("Requires operator review · attempt 1");
+    expect(screen.getByTestId("wallet-op")).toHaveTextContent("Requires operator review · try 1");
     expect(screen.getByTestId("wallet-op")).not.toHaveTextContent(/Unknown|needsOperator/);
   });
   it("needsOperator: shows 'Requires operator review', no failure, no execute/resend button", () => {
@@ -57,7 +57,7 @@ describe("PaymentDetail", () => {
     const base = seed("pay_reconcile0001");
     renderDetail({ ...base, status: "submitted", failure: null, mockRef: null, txid: "ab".repeat(32), walletOperation: { ...base.walletOperation!, state: "pending", needsOperator: false, requiresOperatorConfirmation: true, phase: "prepared", feeZat: "10000" } });
     expect(screen.getByTestId("unresolved-awaiting-operator")).toHaveTextContent("Awaiting operator confirmation");
-    expect(screen.getByTestId("txid-not-broadcast")).toHaveTextContent("signed, not broadcast");
+    expect(screen.getByTestId("txid-not-broadcast")).toHaveTextContent("signed, not sent yet");
     expect(screen.getByTestId("wallet-op-phase")).toHaveTextContent("Signed offline, not broadcast");
     expect(screen.queryByTestId("execute")).toBeNull();
     expect(screen.queryByRole("button", { name: /resend|retry|execute|pay/i })).toBeNull();
@@ -73,7 +73,7 @@ describe("PaymentDetail", () => {
   it("reorg shows a backward move in the timeline", () => {
     renderDetail(seed("pay_reorged000001"));
     const tl = screen.getByTestId("timeline");
-    expect(within(tl).getByText("backward move")).toBeInTheDocument();
+    expect(within(tl).getByText("moved back")).toBeInTheDocument();
   });
 
   it("definitive failure is shown as failed with its code", () => {
@@ -83,7 +83,7 @@ describe("PaymentDetail", () => {
 
   it("mock ref is never shown as a txid", () => {
     renderDetail(seed("pay_bcastrej0001"));
-    expect(screen.getByTestId("tx-ref")).toHaveTextContent("not a txid");
+    expect(screen.getByTestId("tx-ref")).toHaveTextContent("not a real transaction");
   });
 });
 
@@ -94,6 +94,6 @@ describe("MockBanner", () => {
         <MockBanner />
       </Providers>,
     );
-    expect(await screen.findByTestId("mock-banner")).toHaveTextContent(/mock/i);
+    expect(await screen.findByTestId("mock-banner")).toHaveTextContent(/practice mode/i);
   });
 });

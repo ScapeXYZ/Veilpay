@@ -30,7 +30,7 @@ function List({ title, items, icon, testId, tone }: { title: string; items?: str
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-zinc-500">Not provided by the backend for this payment.</p>
+        <p className="text-sm text-zinc-500">Not available for this payment.</p>
       )}
     </div>
   );

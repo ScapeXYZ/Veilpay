@@ -69,7 +69,7 @@ export function RequestComposer({
           <input className={inputCls} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} spellCheck={false} />
         </Field>
         <Field label="Amount (ZEC)">
-          <input className={`${inputCls} font-mono`} value={zec} onChange={(e) => setZec(e.target.value)} inputMode="decimal" />
+          <input className={`${inputCls} tabular-nums`} value={zec} onChange={(e) => setZec(e.target.value)} inputMode="decimal" />
         </Field>
       </div>
       <Field label="Reference">

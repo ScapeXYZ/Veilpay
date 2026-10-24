@@ -58,7 +58,7 @@ function ActivityTable() {
               return (
                 <button key={x.id} aria-pressed={view === x.id} data-testid={`view-${x.id}`} onClick={() => { setView(x.id); setOpen(null); }}
                   className={clsx("rounded-md px-2.5 py-1 text-xs", view === x.id ? "bg-zinc-800 text-zinc-50 ring-1 ring-zinc-700" : "text-zinc-400 hover:bg-zinc-950")}>
-                  {x.label} <span className="font-mono text-zinc-500">{n}</span>
+                  {x.label} <span className="tabular-nums text-zinc-500">{n}</span>
                 </button>
               );
             })}

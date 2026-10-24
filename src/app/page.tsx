@@ -30,7 +30,7 @@ function PreviewRow({ tone, icon, title, amount, note, label }: { tone: "blocked
         </div>
         <Badge tone="neutral" className="!bg-fuchsia-950 !text-fuchsia-300 !ring-fuchsia-800">{label}</Badge>
       </div>
-      <div className="mt-2 font-mono text-xl text-zinc-50 tabular">{amount}</div>
+      <div className="mt-2 text-xl font-semibold tabular-nums text-zinc-50">{amount}</div>
       <p className="mt-1 text-xs text-zinc-400">{note}</p>
     </div>
   );
@@ -82,7 +82,7 @@ export default function Landing() {
             { n: 3, t: "The merchant confirms", d: "The merchant checks that its invoice was paid, without seeing anything else.", i: <Store size={16} aria-hidden /> },
           ].map((s) => (
             <li key={s.n} className="flex gap-3 rounded-2xl border border-zinc-800 p-4">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-zinc-800 font-mono text-xs text-zinc-200">{s.n}</span>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-200">{s.n}</span>
               <div>
                 <div className="flex items-center gap-1.5 font-semibold text-zinc-50">{s.i} {s.t}</div>
                 <p className="mt-1 text-sm text-zinc-400">{s.d}</p>

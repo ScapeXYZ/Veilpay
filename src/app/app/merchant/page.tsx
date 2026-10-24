@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { CheckCircle2, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader, RequireContext } from "@/components/shell";
@@ -45,7 +45,7 @@ function CreateInvoiceForm() {
           <input className={inputCls} value={reference} maxLength={64} onChange={(e) => { setReference(e.target.value); setKey(newIdempotencyKey()); }} />
         </Field>
         <Field label="Amount (ZEC)">
-          <input inputMode="decimal" className={`${inputCls} font-mono`} value={zec} onChange={(e) => { setZec(e.target.value); setKey(newIdempotencyKey()); }} />
+          <input inputMode="decimal" className={`${inputCls} tabular-nums`} value={zec} onChange={(e) => { setZec(e.target.value); setKey(newIdempotencyKey()); }} />
         </Field>
       </div>
       <div className="mt-3 flex items-center gap-3">
@@ -74,7 +74,7 @@ function CreateInvoiceForm() {
       {detail.error && <ErrorBox>{errorText(detail.error)}</ErrorBox>}
       {create.data && detail.isFetching && <p role="status">Refreshing invoice status...</p>}
       {currentInvoice && <>
-        <p role="status" className="mt-3 text-sm text-emerald-300">Invoice created. Payment status below comes from the backend.</p>
+        <p role="status" className="mt-3 flex items-center gap-1.5 text-sm text-emerald-300" data-testid="invoice-created"><CheckCircle2 size={15} aria-hidden /> Invoice created. Share it with your customer; its payment status shows below.</p>
         <InvoiceRequest key={currentInvoice.id} invoice={currentInvoice} demo={source !== "real"} />
       </>}
     </Card>
@@ -147,7 +147,7 @@ function Lookup() {
             ))}
           </div>
         )}
-        {isMockClient(api) && <p className="mt-2 text-xs text-fuchsia-300/80">Mock: ids listed from the simulated backend. The live contract has no merchant payment list yet (flagged, not implemented).</p>}
+        {isMockClient(api) && <p className="mt-2 text-xs text-fuchsia-300/80">Practice mode: these IDs come from the practice data. The real service does not list merchant payments yet.</p>}
       </Card>
       {current && <VerificationCard key={current} paymentId={current} />}
     </div>

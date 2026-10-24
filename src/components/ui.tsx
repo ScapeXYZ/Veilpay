@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { AlertTriangle, CheckCircle2, Clock, Info, Wrench, XCircle } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { Tone } from "@/lib/present";
 import { formatZec } from "@/lib/zat";
@@ -23,6 +24,26 @@ export function Badge({ tone = "neutral", children, className, testId }: { tone?
     >
       {children}
     </span>
+  );
+}
+
+const TONE_ICON: Partial<Record<Tone, typeof Info>> = {
+  success: CheckCircle2,
+  danger: XCircle,
+  warning: AlertTriangle,
+  progress: Clock,
+  info: Info,
+  review: Wrench,
+};
+
+/** Status pill with an icon per tone, so outcome is never carried by colour alone. */
+export function StatusBadge({ tone = "neutral", children, testId }: { tone?: Tone; children: ReactNode; testId?: string }) {
+  const Icon = TONE_ICON[tone];
+  return (
+    <Badge tone={tone} testId={testId}>
+      {Icon && <Icon size={12} aria-hidden />}
+      {children}
+    </Badge>
   );
 }
 
@@ -65,7 +86,7 @@ export function Button({ variant = "primary", busy, className, children, disable
 
 export function Zec({ zat, className, testId }: { zat: string; className?: string; testId?: string }) {
   return (
-    <span data-testid={testId} className={clsx("font-mono tabular-nums", className)} title={`${zat} zat`}>
+    <span data-testid={testId} className={clsx("whitespace-nowrap font-medium tabular-nums", className)} title={`Exact amount: ${formatZec(zat, { exact: true })}`}>
       {formatZec(zat)}
     </span>
   );
@@ -83,8 +104,9 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 export function ErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div role="alert" className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">
-      {children}
+    <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">
+      <XCircle size={16} className="mt-0.5 shrink-0 text-rose-400" aria-hidden />
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

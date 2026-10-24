@@ -163,17 +163,17 @@ export const VERIFICATION_COPY: Record<VerificationState, { label: string; tone:
 export function ackEligibility(v: Verification): { allowed: boolean; reason: string } {
   // The backend's own current-observation verdict can only narrow eligibility, never widen it.
   if (v.acknowledgmentEligible === false && (v.state === "received" || v.state === "late"))
-    return { allowed: false, reason: "The backend says the current observation is not sufficient for a merchant statement." };
-  if (v.state === "received") return { allowed: true, reason: "Receipt verified." };
-  if (v.state === "amount_mismatch") return { allowed: false, reason: "Amount mismatch: cannot be acknowledged." };
+    return { allowed: false, reason: "VeilPay cannot confirm this receipt yet, so it cannot be marked as received." };
+  if (v.state === "received") return { allowed: true, reason: "The right amount arrived and is confirmed." };
+  if (v.state === "amount_mismatch") return { allowed: false, reason: "The amount does not match the invoice, so it cannot be marked as received." };
   if (v.state === "late") {
     if (v.confirmations < v.confirmationsRequired)
-      return { allowed: false, reason: `Late receipt with ${v.confirmations}/${v.confirmationsRequired} confirmations. Wait for the required depth.` };
+      return { allowed: false, reason: `Paid late, ${v.confirmations} of ${v.confirmationsRequired} confirmations so far. Wait for the rest.` };
     if (!v.receivedZat || !v.expectedZat || v.receivedZat !== v.expectedZat)
-      return { allowed: false, reason: "Late receipt amount does not equal the invoice amount." };
-    return { allowed: true, reason: "Late receipt with the exact amount and required confirmations." };
+      return { allowed: false, reason: "Paid late, and the amount does not match the invoice." };
+    return { allowed: true, reason: "Paid late, but the exact amount arrived and is confirmed." };
   }
-  return { allowed: false, reason: "Receipt is not verified yet." };
+  return { allowed: false, reason: "The payment has not been confirmed yet." };
 }
 
 export type DataSource = "mock" | "real" | "disabled" | "unknown";

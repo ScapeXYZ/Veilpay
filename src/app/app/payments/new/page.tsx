@@ -32,7 +32,7 @@ function Rail({ at, blocked }: { at: number; blocked: boolean }) {
           className={clsx("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ring-1 ring-inset",
             i === at ? (blocked ? "bg-rose-950 text-rose-200 ring-rose-900" : "bg-accent-950 text-accent-200 ring-accent-900")
               : i < at ? "text-zinc-300 ring-zinc-700" : "text-zinc-500 ring-zinc-800")}>
-          <span className="font-mono">{i + 1}</span> {s}
+          <span className="tabular-nums">{i + 1}.</span> {s}
         </li>
       ))}
     </ol>

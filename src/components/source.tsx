@@ -17,7 +17,7 @@ export function MockBanner() {
       <div data-testid="mock-banner" role="note" className={`${base} bg-fuchsia-800 text-white`}>
         <FlaskConical size={14} aria-hidden />
         <span>
-          <span className="uppercase">Simulation · Mock backend · No funds move.</span>{" "}
+          <span className="uppercase">Practice mode · No real money moves.</span>{" "}
           <span className="hidden font-normal sm:inline">Every payment, confirmation and receipt here is pretend.</span>
         </span>
       </div>
