@@ -2,7 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 const frontendPort = 3101;
 const backendPort = 4001;
-const frontendOrigin = `http://127.0.0.1:${frontendPort}`;
+// Chromium treats localhost as a secure local context, so Axum's intentionally Secure
+// __Host session cookie survives browser navigation. Keep the servers loopback-only.
+const frontendOrigin = `http://localhost:${frontendPort}`;
 const database = `/tmp/veilpay-playwright-${process.pid}.sqlite`;
 
 export default defineConfig({

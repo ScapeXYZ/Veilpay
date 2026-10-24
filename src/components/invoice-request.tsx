@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import type { Invoice } from "@/lib/contract/schemas";
-import { invoicePaymentUri } from "@/lib/payment-uri";
 import { formatZec } from "@/lib/zat";
 import { fmtTime } from "@/lib/present";
+import { invoicePaymentUri } from "@/lib/payment-uri";
 import { Badge, Button, ErrorBox } from "./ui";
-
 
 export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: boolean }) {
   const uri = invoicePaymentUri(invoice, demo);
@@ -20,7 +19,7 @@ export function InvoiceRequest({ invoice, demo }: { invoice: Invoice; demo: bool
         <h3 className="text-sm font-semibold">{invoice.reference}</h3>
         <Badge tone={payable ? "info" : "neutral"}>{invoice.status.replaceAll("_", " ")}</Badge>
       </div>
-      <p className="mt-1 break-all font-mono text-xs text-zinc-400">{invoice.id}</p>
+      <p className="mt-1 break-all font-mono text-xs text-zinc-400" data-testid="invoice-id">{invoice.id}</p>
       <p className="mt-2 text-sm">Request {formatZec(invoice.amountZat)}</p>
       {uri && payable ? (
         <>
