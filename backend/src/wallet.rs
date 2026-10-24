@@ -1,4 +1,5 @@
 //! Typed wallet boundaries. HTTP submission is disabled; real testnet transport uses the separate operator flow.
+use crate::observer::LocalObserverClient;
 use std::{future::Future, pin::Pin};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,6 +110,30 @@ pub trait WalletAdapter: Send + Sync {
 /// Independent transaction-history parsing remains unavailable, so absence is Unknown.
 pub struct ZingoWallet {
     network: Network,
+}
+/// Mainnet-only adapter backed by an isolated local observer. This type deliberately
+/// exposes no key, prepare, transmit, or transaction-construction capability.
+pub struct ObserverWallet {
+    client: LocalObserverClient,
+}
+impl ObserverWallet {
+    pub fn new(client: LocalObserverClient) -> Self {
+        Self { client }
+    }
+}
+impl WalletAdapter for ObserverWallet {
+    fn network(&self) -> Network {
+        Network::Mainnet
+    }
+    fn submit<'a>(&'a self, _: &'a SendIntent) -> WalletFuture<'a> {
+        Box::pin(async { WalletOutcome::BroadcastDisabled })
+    }
+    fn observe<'a>(&'a self, _: &'a SendIntent) -> WalletFuture<'a> {
+        Box::pin(async { WalletOutcome::Unknown })
+    }
+    fn read_only_snapshot(&self) -> crate::zcash::DataFuture<'_, ReadOnlySnapshot> {
+        Box::pin(async move { self.client.snapshot().await })
+    }
 }
 impl ZingoWallet {
     pub fn new(network: Network) -> Self {

@@ -1,6 +1,8 @@
 mod execution;
 pub mod manual;
 mod merchant;
+pub mod observer;
+pub mod scanner;
 pub mod transport;
 pub mod wallet;
 pub mod zcash;
