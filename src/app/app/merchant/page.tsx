@@ -1,106 +1,34 @@
 "use client";
 
-import { BadgeCheck, KeyRound, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader, RequireContext } from "@/components/shell";
-import { SourceTag } from "@/components/source";
-import { useDataSource } from "@/lib/api/data-source";
+import { SourceTag, WriteBlocked } from "@/components/source";
+import { useDataSource, useNetworkMode } from "@/lib/api/data-source";
 import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec } from "@/components/ui";
 import { inputCls } from "@/lib/styles";
 import { isMockClient } from "@/lib/api";
-import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
+import { errorText, useApi, useCreateInvoice, useInvoice, useInvoices } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
-import type { Acknowledgment } from "@/lib/contract/schemas";
-import { VERIFICATION_COPY, ackEligibility, fmtTime } from "@/lib/present";
 import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
 import { InvoiceRequest } from "@/components/invoice-request";
-
-function VerificationCard({ paymentId }: { paymentId: string }) {
-  const { data: v, isLoading, error } = useVerification(paymentId);
-  const ack = useAcknowledge();
-  const [ackKey] = useState(() => newIdempotencyKey());
-  const [done, setDone] = useState<Acknowledgment | null>(null);
-  if (isLoading) return <Skeleton className="h-40" />;
-  if (error || !v) return <ErrorBox>{errorText(error)}</ErrorBox>;
-  const copy = VERIFICATION_COPY[v.state];
-  const elig = ackEligibility(v);
-  return (
-    <Card
-      testId="verification"
-      title={
-        <span className="flex items-center gap-2">
-          Receipt for {v.reference ?? v.invoiceId}
-          <Badge tone={copy.tone} testId="verification-state">
-            {copy.label}
-          </Badge>
-        </span>
-      }
-      action={<SourceTag source={v.mock ? "mock" : "real"} />}
-    >
-      <p className="text-sm text-zinc-400">{copy.help}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs text-zinc-500">Expected</dt>
-          <dd>{v.expectedZat ? <Zec zat={v.expectedZat} /> : "n/a"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-zinc-500">Received</dt>
-          <dd data-testid="received">{v.receivedZat ? <Zec zat={v.receivedZat} /> : "nothing seen"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-zinc-500">Confirmations</dt>
-          <dd className="font-mono">
-            {v.confirmations}/{v.confirmationsRequired}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-zinc-500">Checked</dt>
-          <dd className="text-xs">{fmtTime(v.checkedAt)}</dd>
-        </div>
-      </dl>
-      {v.acknowledgmentValid === false && (
-        <p className="mt-2 text-xs text-amber-300" data-testid="ack-invalidated">A previous acknowledgment is no longer valid to rely on: the backend invalidated it after the observation changed.</p>
-      )}
-      {v.late && v.state === "amount_mismatch" && <p className="mt-2 text-xs text-amber-300">Also late: received after the invoice expired.</p>}
-      <div className="mt-4 rounded-lg bg-zinc-950/60 px-3 py-2 text-xs text-zinc-400" data-testid="verification-method">
-        <KeyRound size={12} className="mr-1 inline" aria-hidden />
-        {v.method === "mock" ? (
-          <>Method: <b>mock</b>. Simulated, no chain read. Not evidence of anything.</>
-        ) : v.method === "merchant_wallet_scan" ? (
-          <>
-            Method: <b>merchant wallet scan</b>. The merchant&apos;s own wallet independently decrypts its Orchard history and must match receiver, exact amount, expected txid and the required confirmations. Not a settlement proof. No customer key is involved.
-          </>
-        ) : (
-          <>
-            Method: <b>merchant IVK scan</b>. The operator holds the merchant&apos;s incoming viewing key and scans server-side. Custodial, not a per-payment disclosure proof. No customer key is involved.
-          </>
-        )}
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        {done ? (
-          <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="acknowledged">
-            <BadgeCheck size={16} aria-hidden /> Acknowledged {fmtTime(done.at)}. A server-authenticated merchant statement, not a settlement proof.
-            {done.invalidatedAt && (
-              <span className="text-amber-300" data-testid="ack-statement-invalidated"> Invalidated {fmtTime(done.invalidatedAt)}{done.invalidationReason ? `: ${done.invalidationReason}` : ""}.</span>
-            )}
-          </span>
-        ) : (
-          <>
-            <Button disabled={!elig.allowed} busy={ack.isPending} onClick={() => ack.mutate({ paymentId, key: ackKey }, { onSuccess: setDone })} data-testid="ack">
-              Acknowledge receipt
-            </Button>
-            <span className="text-xs text-zinc-500">{elig.reason}</span>
-          </>
-        )}
-      </div>
-      {ack.error && <div className="mt-3"><ErrorBox>{errorText(ack.error)}</ErrorBox></div>}
-    </Card>
-  );
-}
+import { VerificationCard } from "@/components/verification-card";
 
 function CreateInvoice() {
+  const mode = useNetworkMode();
+  if (!mode.canWrite)
+    return (
+      <Card title="New invoice" testId="create-invoice-blocked">
+        <WriteBlocked reason={mode.writeBlockedReason} />
+        <p className="mt-2 text-xs text-zinc-500">No invoice issuance and no spendable QR here. Widening a network enum does not make a payment flow safe.</p>
+      </Card>
+    );
+  return <CreateInvoiceForm />;
+}
+
+function CreateInvoiceForm() {
   const source = useDataSource();
   const create = useCreateInvoice();
   const detail = useInvoice(create.data?.id ?? null);
@@ -230,7 +158,7 @@ export default function MerchantPage() {
   return (
     <>
       <PageHeader
-        title="Merchant verification"
+        title="Merchant portal"
         subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer hands over nothing, and the chain shows nothing."
       />
       <RequireContext ctx="merchant">
