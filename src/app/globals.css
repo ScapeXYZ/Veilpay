@@ -97,6 +97,12 @@ body {
   color: #0b1012;
 }
 
+/* Practice frame: 2px dashed practice ink + 4% diagonal hatch. Static on purpose. */
+.practice-frame {
+  border: 2px dashed rgb(195 181 245 / 0.55);
+  background-image: repeating-linear-gradient(135deg, rgb(195 181 245 / 0.04) 0 1px, transparent 1px 9px);
+}
+
 /* Subtle abstract privacy veil, landing hero only. */
 .veil {
   background:
