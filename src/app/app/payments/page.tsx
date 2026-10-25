@@ -61,7 +61,7 @@ function Payments() {
         {isLoading ? (
           <Skeleton className="h-64" />
         ) : shown.length === 0 ? (
-          <p className="p-3 text-sm text-zinc-500">Nothing here.</p>
+          <p className="p-3 text-sm text-zinc-500">No payments match this filter.</p>
         ) : (
           <div className="flex max-h-[70vh] flex-col gap-1 overflow-y-auto">
             {shown.map((p) => (

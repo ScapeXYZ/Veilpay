@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { MockControlsPanel } from "@/components/mock-controls";
 import { useOnboarding } from "@/lib/onboarding";
+import { isMockClient } from "@/lib/api";
+import { useApi } from "@/lib/api/hooks";
 import { PageHeader } from "@/components/shell";
 import { GLOSSARY } from "@/components/term";
 import { Card } from "@/components/ui";
@@ -23,9 +25,10 @@ function Answer({ icon, q, children }: { icon: ReactNode; q: string; children: R
 
 export default function HelpPage() {
   const tour = useOnboarding();
+  const mock = isMockClient(useApi());
   return (
     <>
-      <PageHeader title="Help & demo" subtitle="What VeilPay does, in plain words, a tour of the app and a practice run you can replay." />
+      <PageHeader title={mock ? "Help & demo" : "Help"} subtitle={mock ? "What VeilPay does, in plain words, a tour of the app and a practice run you can replay." : "What VeilPay does, in plain words, a tour of the app, and a separate practice run you can replay."} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card testId="help-intro">
@@ -33,13 +36,13 @@ export default function HelpPage() {
           <ol className="mt-3 space-y-2.5 text-[15px] text-zinc-300">
             <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">1</span>You set spending rules for your AI agent: a max per payment, a total budget, and which merchants it may pay.</li>
             <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">2</span>When the agent wants to pay an invoice, VeilPay checks the rules. Over a limit? Blocked, with the exact reason, and no money moves.</li>
-            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">3</span>Approved payments are meant to be sent as private (shielded) Zcash payments and count as paid only after network confirmations. In this demo, sending and confirmations are simulated.</li>
-            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">4</span>The merchant checks on its side that its invoice was paid. The design keeps the amount and who paid out of public view; this demo does not prove that on a real network.</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">3</span>Approved payments are meant to be sent as private (shielded) Zcash payments and count as paid only after network confirmations.{mock ? " In this demo, sending and confirmations are simulated." : " On the main network VeilPay is read-only and sends nothing."}</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">4</span>The merchant checks on its side that its invoice was paid. The design keeps the amount and who paid out of public view;{mock ? " this demo does not prove that on a real network." : " VeilPay does not verify that on the network yet."}</li>
           </ol>
         </Card>
         <div className="flex flex-col gap-5">
           <Card testId="help-demo" className="flex flex-col">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-50"><PlayCircle size={16} className="text-accent-300" aria-hidden /> Interactive demo</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-50"><PlayCircle size={16} className="text-accent-300" aria-hidden /> {mock ? "Interactive demo" : "Practice demo (separate from your wallet)"}</div>
             <p className="mt-2 text-sm text-zinc-400">A step-by-step simulation in your browser: a blocked overspend, an allowed payment, simulated confirmations and the merchant check. It is not a video, nothing real moves, and you can replay it any time.</p>
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-fuchsia-300"><FlaskConical size={12} aria-hidden /> Simulation only</p>
             <Link href="/demo" data-testid="help-start-demo" className="mt-4 inline-flex items-center justify-center gap-2 self-start rounded-lg bg-accent-400 px-3.5 py-2 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
@@ -60,7 +63,7 @@ export default function HelpPage() {
         <Answer icon={<Lock size={16} aria-hidden />} q="Can VeilPay spend real money?">No. On the main Zcash network VeilPay only watches: sending, payment requests, invoices and rule changes are turned off. Payments happen only on the test network, where coins have no value.</Answer>
         <Answer icon={<Ban size={16} aria-hidden />} q="What happens when the agent asks for too much?">The payment is blocked before anything moves. You see which rule it broke and the exact limit.</Answer>
         <Answer icon={<RotateCcw size={16} aria-hidden />} q="Can a payment be sent twice?">No. If VeilPay cannot tell whether a send reached the network, it marks the outcome as unknown and never resends. An operator resolves it.</Answer>
-        <Answer icon={<CheckCircle2 size={16} aria-hidden />} q="When is a payment “paid”?">Only when the VeilPay server reports the required network confirmations. In practice mode those confirmations are simulated. Approved, sent, confirmed and checked by the merchant are always shown as separate steps.</Answer>
+        <Answer icon={<CheckCircle2 size={16} aria-hidden />} q="When is a payment “paid”?">Only when the VeilPay server reports the required network confirmations.{mock && " In practice mode those confirmations are simulated."} Approved, sent, confirmed and checked by the merchant are always shown as separate steps.</Answer>
         <Answer icon={<ShieldCheck size={16} aria-hidden />} q="Is the wallet balance my agent's money?">No. The wallet is shared, so VeilPay does not show its balance as your agent&apos;s funds. Your agent&apos;s limit is the budget in Spending rules.</Answer>
       </Card>
 

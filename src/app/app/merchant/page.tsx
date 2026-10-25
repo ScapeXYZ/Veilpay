@@ -130,7 +130,7 @@ function Lookup() {
         <ol className="mb-3 space-y-1 text-xs text-zinc-400" data-testid="verify-steps">
           <li><span className="font-semibold text-zinc-300">1.</span> On the customer&apos;s payment page, find <b className="text-zinc-200">Payment ID</b> under Payment details and press <b className="text-zinc-200">Copy</b>.</li>
           <li><span className="font-semibold text-zinc-300">2.</span> Paste it below and press <b className="text-zinc-200">Check</b> (or Enter).</li>
-          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt. In practice mode a match means the simulated payment matches the invoice, not that funds arrived.</li>
+          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt.{isMockClient(api) && " In practice mode a match means the simulated payment matches the invoice, not that funds arrived."}</li>
         </ol>
         <form
           className="flex gap-2"
@@ -167,15 +167,16 @@ function Lookup() {
 }
 
 export default function MerchantPage() {
+  const mock = isMockClient(useApi());
   return (
     <>
       <PageHeader
         title="Merchant portal"
-        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys. In practice mode receipts and confirmations are simulated."
+        subtitle={`Juniper Coffee creates invoices and checks they were paid. The customer shares no keys.${mock ? " In practice mode receipts and confirmations are simulated." : ""}`}
       />
       <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What a receipt check tells you">
-          Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows (simulated in practice mode). In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
+          Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows{mock && " (simulated in practice mode)"}. {mock ? "In this demo the" : "The"} VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
         </Notice>
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Lookup />

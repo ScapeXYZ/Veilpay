@@ -71,7 +71,7 @@ function ActivityTable() {
           </div>
         </div>
         {shown.length === 0 ? (
-          <p className="p-5 text-sm text-zinc-500">Nothing here right now.</p>
+          <p className="p-5 text-sm text-zinc-500">No activity yet. Payments your agent requests show here once the VeilPay server records them.</p>
         ) : (
           <table className="block w-full text-sm md:table" data-testid="activity-table">
             <thead className="hidden text-left text-xs uppercase tracking-wide text-zinc-500 md:table-header-group">
