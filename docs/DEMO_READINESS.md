@@ -135,6 +135,33 @@ not retained.
   merchant verification, mainnet read-only UI gating, and mock-reference/balance
   wording. It does not turn the mock adapter into a wallet or settlement test.
 
+## Real Noir Wallet extension check (2026-10-25)
+
+Run against the newest pushed `feat/noir-wallet-readonly` head `09db9c9` (the
+Stage 2A dashboard was not on GitHub yet) with the official Noir Wallet
+extension v1.0.39 and a throwaway, never-funded mainnet wallet created in a
+temporary profile (recovery phrase kept in memory only; profile deleted).
+Backend `NETWORK=mainnet`, broadcast disabled; app on `http://localhost:3100`.
+
+| Check | Result |
+|---|---|
+| Real approval popup opens on Connect | pass |
+| Approve connects (connected card, disconnect control) | pass |
+| Disconnect revokes site access (`zcash_getAccounts` returns `null`) and the card resets, also after reload | pass |
+| Overview shows the real shielded + transparent addresses | **fail on `09db9c9`**: the extension returns `u1…`/`t1…` but the page renders neither |
+| Balances are wallet-reported 0 ZEC (shielded, available, total) | pass |
+| Activity is empty and labelled as not shown by VeilPay | pass |
+| No simulated values on the connected card; only `/api/health` is called | pass (the global "Help & demo" tour copy still says payments are simulated) |
+| No recovery phrase, password, memo, key or address in DOM, local/session storage, cookies, IndexedDB, console, requests or responses | pass |
+
+`tests/browser/noir-extension-real.spec.ts` automates these (headed Chromium,
+opt-in via `NOIR_EXT_PATH`). The address check runs with
+`NOIR_EXPECT_ADDRESSES=1` and is expected to pass once the Stage 2A overview
+lands. Headless Chromium cannot open the extension's approval window and the
+extension then answers "User rejected the request", so CI needs a headed
+browser (for example `xvfb-run`). 7-day/30-day charts, totals and recent
+transactions are untested until that code is pushed.
+
 ## Mainnet restrictions
 
 Mainnet payment execution is not a demo capability. The OpenAPI contract limits

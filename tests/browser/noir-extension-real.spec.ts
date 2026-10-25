@@ -53,25 +53,53 @@ test.describe("real Noir Wallet extension", () => {
   });
 
   test("Connect Noir Wallet opens the real approval popup and connects after approval", async () => {
-    await createThrowawayWallet(await ctx.newPage(), extId);
-
-    const page = await ctx.newPage();
-    await page.goto(`${APP}/app`, { waitUntil: "domcontentloaded" });
-    const connect = page.getByRole("button", { name: /connect noir wallet/i }).first();
-    await expect(connect).toBeVisible({ timeout: 30_000 });
-
-    const popupP = ctx.waitForEvent("page", { predicate: (p) => p.url().includes("#approval"), timeout: 30_000 });
-    await connect.click();
-    const popup = await popupP;
-    await expect(popup.getByText(/wants to connect to your wallet/i)).toBeVisible();
-    await popup.getByRole("button", { name: /^connect( \(\d+\))?$/i }).click();
-
-    await expect(page.getByRole("button", { name: /disconnect and revoke site access/i })).toBeVisible({ timeout: 30_000 });
-    const accounts = await page.evaluate(() => (window as unknown as { noirwallet: { zcash: { request: (a: { method: string; params: unknown[] }) => Promise<{ shielded?: string; transparent?: string }> } } }).noirwallet.zcash.request({ method: "zcash_getAccounts", params: [] }));
+    const { page, accounts } = await connectApp(ctx, extId);
     expect(accounts.shielded).toMatch(/^u1/);
     expect(accounts.transparent).toMatch(/^t1/);
+    await expect(page.getByTestId("noir-balances")).toContainText(/0 ZEC/);
+
+    // Read-only means nothing wallet-derived lands in page storage or goes to the backend.
+    const storage = await page.evaluate(() => JSON.stringify({ l: { ...localStorage }, s: { ...sessionStorage }, c: document.cookie }));
+    for (const a of [accounts.shielded!, accounts.transparent!]) expect(storage).not.toContain(a);
+  });
+
+  test("Disconnect revokes site access and resets the card", async () => {
+    const { page } = await connectApp(ctx, extId);
+    await page.getByTestId("disconnect-noir-wallet").click();
+    await expect(page.getByRole("button", { name: /connect noir wallet/i }).first()).toBeVisible({ timeout: 15_000 });
+    expect(await page.evaluate(() => (window as unknown as { noirwallet: { zcash: { request: (a: { method: string; params: unknown[] }) => Promise<unknown> } } }).noirwallet.zcash.request({ method: "zcash_getAccounts", params: [] }))).toBeNull();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("button", { name: /connect noir wallet/i }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("disconnect-noir-wallet")).toHaveCount(0);
+  });
+
+  // The connected overview must render the wallet-reported addresses. The 09db9c9 card does not
+  // render them yet, so this runs only when NOIR_EXPECT_ADDRESSES=1 (the Stage 2A overview).
+  test("connected overview renders the real shielded and transparent addresses", async () => {
+    test.skip(!process.env.NOIR_EXPECT_ADDRESSES, "set NOIR_EXPECT_ADDRESSES=1 on a build whose overview renders addresses");
+    const { page, accounts } = await connectApp(ctx, extId);
+    const body = await page.locator("body").innerText();
+    for (const a of [accounts.shielded!, accounts.transparent!]) expect(body.includes(a) || body.includes(a.slice(0, 8))).toBe(true);
   });
 });
+
+type Accounts = { shielded?: string; transparent?: string };
+async function connectApp(ctx: BrowserContext, extId: string): Promise<{ page: Page; accounts: Accounts }> {
+  await createThrowawayWallet(await ctx.newPage(), extId);
+  const page = await ctx.newPage();
+  await page.goto(`${APP}/app`, { waitUntil: "domcontentloaded" });
+  const connect = page.getByRole("button", { name: /connect noir wallet/i }).first();
+  await expect(connect).toBeVisible({ timeout: 30_000 });
+  const popupP = ctx.waitForEvent("page", { predicate: (p) => p.url().includes("#approval"), timeout: 30_000 });
+  await connect.click();
+  const popup = await popupP;
+  await expect(popup.getByText(/wants to connect to your wallet/i)).toBeVisible();
+  // The popup closes itself on approval.
+  await popup.getByRole("button", { name: /^connect( \(\d+\))?$/i }).click({ noWaitAfter: true }).catch((e) => { if (!/closed/i.test(String(e))) throw e; });
+  await expect(page.getByRole("button", { name: /disconnect and revoke site access/i })).toBeVisible({ timeout: 30_000 });
+  const accounts = await page.evaluate(() => (window as unknown as { noirwallet: { zcash: { request: (a: { method: string; params: unknown[] }) => Promise<Accounts> } } }).noirwallet.zcash.request({ method: "zcash_getAccounts", params: [] }));
+  return { page, accounts };
+}
 
 async function createThrowawayWallet(ui: Page, extId: string) {
   const password = `Zx!${Math.random().toString(36).slice(2, 12)}Q9#`;
