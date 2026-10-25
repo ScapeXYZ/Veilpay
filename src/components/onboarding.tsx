@@ -22,7 +22,7 @@ export const ONBOARDING_STEPS = [
     href: "/app",
     icon: Sparkles,
     title: "Welcome to VeilPay",
-    body: "VeilPay lets an AI agent pay invoices only within limits you set. This short tour shows where things are. In this build every payment is a simulation, so no real money moves.",
+    body: "VeilPay lets an AI agent pay invoices only within limits you set. This short tour shows where things are. Practice mode uses simulations; the mainnet overview is read-only and shows only data Noir Wallet reports. Neither view enables sending from this app.",
   },
   {
     id: "rules",

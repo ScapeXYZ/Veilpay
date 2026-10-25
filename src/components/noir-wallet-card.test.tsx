@@ -27,6 +27,7 @@ function provider(opts: { authorized?: boolean; reject?: boolean } = {}) {
       transparent: "0", shielded: id === accounts[1].id ? "1.25" : "2.50", available: id === accounts[1].id ? "1.00" : "2.00", total: id === accounts[1].id ? "1.30" : "2.60",
       accounts: accounts.map((account) => ({ id: account.id, walletId: account.walletId, accountId: account.accountId, synced: account.id !== accounts[1].id, balance: { transparent: "0", shielded: account.id === accounts[1].id ? "1.25" : "2.50", available: account.id === accounts[1].id ? "1.00" : "2.00", total: account.id === accounts[1].id ? "1.30" : "2.60" } })),
     })),
+    getTransactionHistory: vi.fn(async () => [{ txid: "a".repeat(64), type: "receive", amount: "0.25", status: "mined", timestamp: 1_700_000_000_000, memo: "never render this" }]),
     disconnect: vi.fn(async () => { authorized = false; }),
     on: vi.fn((_event: string, listener: (accounts?: unknown) => void) => listeners.add(listener)),
     removeListener: vi.fn((_event: string, listener: (accounts?: unknown) => void) => listeners.delete(listener)),
@@ -69,6 +70,29 @@ describe("NoirWalletCard", () => {
     fireEvent.click(screen.getByTestId("connect-noir-wallet"));
     await screen.findByText("2.50 ZEC");
     expect(fake.zcash.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders returned mainnet addresses and wallet activity without rendering a memo", async () => {
+    const fake = provider({ authorized: true });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText("2.50 ZEC");
+    expect(screen.getByTestId("noir-addresses")).toHaveTextContent("t1a");
+    expect(screen.getByTestId("noir-addresses")).toHaveTextContent("u1a");
+    await screen.findByText("Receive");
+    expect(screen.getByTestId("noir-activity-list")).toHaveTextContent("0.25 ZEC");
+    expect(screen.queryByText("never render this")).toBeNull();
+    expect(fake.zcash.getTransactionHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses testnet-looking accounts instead of presenting them as mainnet", async () => {
+    const fake = provider({ authorized: true });
+    fake.provider.zcash.getAccounts.mockResolvedValue({ transparent: "tmabc", shielded: "utest1abc", accounts: [{ ...accounts[0], addresses: { transparent: "tmabc", shielded: "utest1abc" } }] });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText(/not a noir wallet mainnet connection/i);
+    expect(screen.queryByTestId("noir-balances")).toBeNull();
+    expect(fake.zcash.getTransactionHistory).not.toHaveBeenCalled();
   });
 
   it("switches only between authorized accounts and labels an unsynced wallet balance", async () => {

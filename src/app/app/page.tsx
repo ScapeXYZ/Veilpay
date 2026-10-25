@@ -178,7 +178,7 @@ function MainnetReadOnlyWallet() {
       <ModeCard />
       <NoirWalletCard />
       <Notice tone="neutral" title="VeilPay server observer unavailable">
-        This local backend has no real mainnet observer adapter. Wallet balances above come directly from Noir Wallet; VeilPay is not showing backend activity, confirmations, or transaction history.
+        Wallet balances, local activity, and transaction statuses above come directly from Noir Wallet. VeilPay has no mainnet observer here, so it cannot report agent spending, payment confirmation, or independently verified settlement. Those are separate records, not substitutes for wallet activity.
       </Notice>
     </>
   );
@@ -193,7 +193,7 @@ function Overview() {
 export default function DashboardPage() {
   return (
     <>
-      <PageHeader title="Overview" subtitle="How much your AI agent may spend, what it has paid, and anything that needs you." />
+      <PageHeader title="Overview" subtitle="Wallet-reported mainnet balances and activity, kept separate from VeilPay agent spending and settlement evidence." />
       <Overview />
     </>
   );
