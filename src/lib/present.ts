@@ -256,6 +256,18 @@ export function privacyLine(p: Payment, simulated: boolean): string {
   return p.pool ? `${p.pool} pool, as reported by VeilPay` : "Not reported by the server";
 }
 
+/** Evidence line under the Privacy lens. A completed simulated payment never reads "not sent yet". */
+export function privacyEvidence(p: Payment, simulated: boolean): string {
+  const sent = wasSent(p);
+  if (simulated) {
+    return sent
+      ? `: a simulated payment, mock execution only${p.pool ? ` (simulated ${p.pool} pool)` : ""}. No real shielded settlement happened`
+      : ", not sent yet. Nothing has been simulated for this payment";
+  }
+  if (p.pool) return `, which reports it as sent through the ${p.pool} pool`;
+  return sent ? ", which has not reported a pool" : ", not sent yet";
+}
+
 export type DataSource = "mock" | "real" | "disabled" | "unknown";
 
 export function dataSourceOf(health: Health | undefined, clientMode: "mock" | "live"): DataSource {
