@@ -114,5 +114,6 @@ test("copy: interactive demo naming and simulation qualifiers are present", asyn
   await expect(page.getByText(/watch the 2-minute demo/i)).toHaveCount(0);
   await page.goto("/app/merchant");
   await expect(page.getByRole("heading", { name: "Merchant portal" })).toBeVisible();
-  await expect(page.getByText(/receipts and confirmations are simulated/i)).toBeVisible();
+  await expect(page.getByTestId("mock-banner")).toContainText(/mock practice mode/i);
+  await expect(page.getByText(/mainnet.*watch/i)).toHaveCount(0);
 });

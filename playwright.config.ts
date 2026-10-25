@@ -24,7 +24,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `NETWORK=regtest WALLET_BACKEND=mock DATABASE_URL=sqlite://${database} FRONTEND_ORIGIN=${frontendOrigin} BIND_ADDR=127.0.0.1:${backendPort} cargo run --locked --manifest-path backend/Cargo.toml`,
+      command: `NETWORK=regtest WALLET_BACKEND=mock VEILPAY_DEMO_SESSION_RATE_LIMIT=1000 DATABASE_URL=sqlite://${database} FRONTEND_ORIGIN=${frontendOrigin} BIND_ADDR=127.0.0.1:${backendPort} cargo run --locked --manifest-path backend/Cargo.toml`,
       url: `http://127.0.0.1:${backendPort}/api/health`,
       reuseExistingServer: false,
       timeout: 120_000,

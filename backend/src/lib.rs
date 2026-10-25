@@ -35,7 +35,8 @@ impl Config {
     pub fn from_env() -> std::result::Result<Self, String> {
         let c = Self {
             // Never reuse the historical demo database for a mainnet process.
-            database_url: std::env::var("DATABASE_URL").unwrap_or("sqlite://veilpay-mainnet.db".into()),
+            database_url: std::env::var("DATABASE_URL")
+                .unwrap_or("sqlite://veilpay-mainnet.db".into()),
             frontend_origin: std::env::var("FRONTEND_ORIGIN")
                 .unwrap_or("http://localhost:3100".into()),
             network: std::env::var("NETWORK").unwrap_or("mainnet".into()),
@@ -55,6 +56,10 @@ pub struct App {
     config: Config,
     wallet: Option<Arc<dyn WalletAdapter>>,
     operator_read_token_hash: Option<[u8; 32]>,
+    // Only the loopback regtest/mock browser harness may raise this from the
+    // production-safe default. It prevents one serialized test suite from
+    // exhausting its own shared fixture IP budget.
+    demo_session_rate_limit: i64,
 }
 type Result<T> = std::result::Result<T, ApiError>;
 #[derive(Debug)]
@@ -289,11 +294,21 @@ impl App {
             .await?;
         let operator_read_token_hash =
             operator_read_token.map(|token| Sha256::digest(token.as_bytes()).into());
+        let demo_session_rate_limit = if config.network == "regtest" && wallet.is_none() {
+            std::env::var("VEILPAY_DEMO_SESSION_RATE_LIMIT")
+                .ok()
+                .and_then(|value| value.parse::<i64>().ok())
+                .filter(|value| *value >= 30 && *value <= 10_000)
+                .unwrap_or(30)
+        } else {
+            30
+        };
         let app = Self {
             pool,
             config,
             wallet,
             operator_read_token_hash,
+            demo_session_rate_limit,
         };
         // Read-only recovery; pending operations are never submitted on startup.
         app.reconcile_wallet_operations()
@@ -458,7 +473,7 @@ async fn dispatch(
             .bind(&ip)
             .fetch_one(&mut *tx)
             .await?;
-        if count > 30 {
+        if count > app.demo_session_rate_limit {
             tx.commit().await?;
             return Err(ApiError(429, "VALIDATION_FAILED"));
         }

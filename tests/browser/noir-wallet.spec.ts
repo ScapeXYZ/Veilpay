@@ -64,9 +64,10 @@ test("Noir Wallet authorization rejection leaves no balance visible", async ({ p
   await page.goto("/app");
   const card = page.getByTestId("noir-wallet-card");
   await card.getByTestId("connect-noir-wallet").click();
-  // The real SDK normalizes an extension rejection to no authorized accounts.
-  // The UI must keep the connection prompt and never retain a balance.
-  await expect(card).toContainText(/connect an account/i);
+  // The extension may report the rejection directly or return to its normal
+  // disconnected state after the failed request. In either case, the UI must
+  // keep a reconnect action and never retain a balance.
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
   await expect(card.getByTestId("noir-balances")).toHaveCount(0);
 });
 
@@ -74,10 +75,12 @@ test("locally authorized Noir Wallet observation remains available when backend 
   await installNoir(page);
   await page.route("**/api/health", (route) => route.abort("connectionrefused"));
   await page.goto("/app");
+  // Wait for the failed health query to settle before requesting wallet access:
+  // the observation card intentionally remounts into its unknown-health mode.
+  await expect(page.getByText(/backend unavailable.*wallet observation only/i)).toBeVisible();
   const card = page.getByTestId("noir-wallet-card");
   await card.getByTestId("connect-noir-wallet").click();
   await expect(card).toContainText("2.50 ZEC");
-  await expect(page.getByText(/backend unavailable.*wallet observation only/i)).toBeVisible();
   await expect(page.getByTestId("demo-session-gate")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Help & demo" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "View as" })).toHaveCount(0);
