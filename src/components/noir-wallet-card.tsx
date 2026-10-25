@@ -15,8 +15,8 @@ function accountName(account: NoirAccount) {
   return account.label || `Account ${account.accountId}`;
 }
 
-function amount(value: string | undefined) {
-  return value === undefined ? "Not reported" : `${value} ZEC`;
+function amount(value: string | null | undefined) {
+  return value == null ? "Unavailable" : `${value} ZEC`;
 }
 
 /**
@@ -24,8 +24,9 @@ function amount(value: string | undefined) {
  * for testnet or mock modes, keeping real wallet observation separate from
  * fixtures and simulations.
  */
-export function NoirWalletCard() {
+export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowWhenBackendUnavailable?: boolean }) {
   const mode = useNetworkMode();
+  const walletObservationAllowed = mode.kind === "mainnet_readonly" || (allowWhenBackendUnavailable && mode.kind === "unknown");
   const [state, setState] = useState<State>("checking");
   const [connected, setConnected] = useState<Connected | null>(null);
   const adapter = useRef<NoirWalletAdapter | null>(null);
@@ -69,7 +70,7 @@ export function NoirWalletCard() {
   }, [clear]);
 
   useEffect(() => {
-    if (mode.kind !== "mainnet_readonly") return;
+    if (!walletObservationAllowed) return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
 
@@ -97,7 +98,7 @@ export function NoirWalletCard() {
       unsubscribe?.();
       adapter.current = null;
     };
-  }, [clear, load, mode.kind]);
+  }, [clear, load, walletObservationAllowed]);
 
   const connect = async () => {
     const provider = adapter.current ? null : await waitForNoirWallet();
@@ -139,13 +140,13 @@ export function NoirWalletCard() {
     }
   };
 
-  if (mode.kind !== "mainnet_readonly") return null;
+  if (!walletObservationAllowed) return null;
   const selectedBalance = connected?.balance?.accounts.find((account) => account.id === connected.selectedId)?.balance ?? connected?.balance ?? null;
   const isSynced = connected?.balance?.accounts.find((account) => account.id === connected.selectedId)?.synced;
 
   return (
     <Card title={<span className="flex items-center gap-2"><Wallet size={15} aria-hidden /> Noir Wallet</span>} testId="noir-wallet-card"
-      action={<Badge tone={state === "connected" ? "success" : state === "syncing" || state === "checking" || state === "connecting" ? "progress" : "neutral"}>{state === "connected" ? "Connected" : state === "syncing" ? "Syncing" : "Read-only"}</Badge>}>
+      action={<div className="flex items-center gap-2 text-xs text-zinc-500"><Badge tone={state === "connected" ? "success" : state === "syncing" || state === "checking" || state === "connecting" ? "progress" : "neutral"}>{state === "connected" ? "Connected" : state === "syncing" ? "Syncing" : "Read-only"}</Badge><span>Can view, cannot spend.</span></div>}>
       {state === "unavailable" && <Notice tone="neutral" title="Noir Wallet was not detected on this page">Confirm that the official extension is enabled and allowed to access this site, then reload. VeilPay will not request access automatically.</Notice>}
       {state === "disconnected" && <p className="text-sm text-zinc-400">Connect an account to view Noir Wallet-reported balances. VeilPay cannot spend, sign, or broadcast from this screen.</p>}
       {state === "locked" && <p className="text-sm text-amber-200">Noir Wallet is locked. Unlock it in the extension, then reconnect.</p>}
@@ -160,7 +161,8 @@ export function NoirWalletCard() {
               {connected.accounts.map((account) => <option key={account.id} value={account.id}>{accountName(account)}</option>)}
             </select>
           </label>}
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3" data-testid="noir-balances">
+          <dl className="grid grid-cols-2 gap-3 text-sm xl:grid-cols-4" data-testid="noir-balances">
+            <div><dt className="text-xs text-zinc-500">Transparent</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100" data-testid="noir-transparent-balance">{amount(selectedBalance?.transparent)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Shielded</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.shielded)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Available</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.available ?? selectedBalance?.spendable)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Total</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.total)}</dd></div>

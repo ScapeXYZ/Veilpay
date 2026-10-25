@@ -56,7 +56,7 @@ function ContextSwitch() {
   const sw = useSwitchContext();
   return (
     <div className="flex items-center gap-1 rounded-lg bg-zinc-900 p-1 ring-1 ring-zinc-800" role="group" aria-label="View as">
-      <span className="hidden px-1.5 text-[11px] text-zinc-500 sm:inline">View as</span>
+      <span className="hidden px-1.5 text-xs text-zinc-500 sm:inline">View as</span>
       {(["customer", "merchant"] as const).map((c) => (
         <button
           key={c}
@@ -159,8 +159,9 @@ function RailLink({ href, active, small, children }: { href: string; active: boo
 
 /** Operational shell for /app/*: 224px rail on desktop, top bar + bottom nav with More on mobile. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const mode = useNetworkMode();
   return (
-    <OnboardingProvider>
+    <OnboardingProvider disabled={mode.kind === "mainnet_readonly"}>
       <ShellFrame>{children}</ShellFrame>
     </OnboardingProvider>
   );
@@ -186,14 +187,14 @@ function ShellFrame({ children }: { children: ReactNode }) {
               <RailLink key={href} href={href} active={isActive(path, href)}><Icon size={16} aria-hidden /> {label}</RailLink>
             ))}
           </nav>
-          <div className="mt-6 px-2.5 text-[11px] font-medium uppercase tracking-wide text-zinc-600" id="more-heading">More</div>
+          <div className="mt-6 px-2.5 text-xs font-medium uppercase tracking-wide text-zinc-600" id="more-heading">More</div>
           <nav className="mt-1.5 flex flex-col gap-0.5" aria-labelledby="more-heading" data-testid="rail-more">
             {MORE.map(({ href, label, icon: Icon }) => (
               <RailLink key={href} href={href} active={isActive(path, href)} small><Icon size={15} aria-hidden /> {label}</RailLink>
             ))}
           </nav>
           <div className="mt-auto flex flex-col gap-3 px-2">
-            {!mainnet && <p className="text-[11px] leading-relaxed text-zinc-500">Owner and merchant views are separate demo sessions, not real sign-in.</p>}
+            {!mainnet && <p className="text-xs leading-relaxed text-zinc-500">Owner and merchant views are separate demo sessions, not real sign-in.</p>}
           </div>
         </aside>
         <div className="min-w-0 flex-1">

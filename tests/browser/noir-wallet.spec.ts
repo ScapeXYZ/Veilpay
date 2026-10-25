@@ -58,14 +58,27 @@ test("Noir Wallet connects only on click, switches authorized accounts, and disc
   await expect(card).toContainText(/connect an account/i);
 });
 
-test("Noir Wallet reports a rejected authorization without showing a balance", async ({ page }) => {
+test("Noir Wallet authorization rejection leaves no balance visible", async ({ page }) => {
   await installNoir(page, true);
   await page.route("**/api/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(mainnetHealth) }));
   await page.goto("/app");
   const card = page.getByTestId("noir-wallet-card");
   await card.getByTestId("connect-noir-wallet").click();
-  await expect(card).toContainText(/connection was declined/i);
+  // The real SDK normalizes an extension rejection to no authorized accounts.
+  // The UI must keep the connection prompt and never retain a balance.
+  await expect(card).toContainText(/connect an account/i);
   await expect(card.getByTestId("noir-balances")).toHaveCount(0);
+});
+
+test("locally authorized Noir Wallet observation remains available when backend health fails", async ({ page }) => {
+  await installNoir(page);
+  await page.route("**/api/health", (route) => route.abort("connectionrefused"));
+  await page.goto("/app");
+  const card = page.getByTestId("noir-wallet-card");
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("2.50 ZEC");
+  await expect(page.getByText(/backend unavailable.*wallet observation only/i)).toBeVisible();
+  await expect(page.getByTestId("demo-session-gate")).toHaveCount(0);
 });
 
 test("mainnet wallet with no reported history renders an empty 7/30-day activity view", async ({ page }) => {
@@ -74,6 +87,7 @@ test("mainnet wallet with no reported history renders an empty 7/30-day activity
   await page.goto("/app");
   const card = page.getByTestId("noir-wallet-card");
   await card.getByTestId("connect-noir-wallet").click();
+  await expect(card.getByTestId("noir-transparent-balance")).toHaveText("0 ZEC");
   await expect(card.getByTestId("noir-wallet-chart-empty")).toContainText("No transactions reported in the last 7 days.");
   await expect(card.getByTestId("noir-wallet-bars")).toHaveCount(0);
   await expect(card.getByTestId("noir-wallet-recent")).toContainText("No transactions reported.");

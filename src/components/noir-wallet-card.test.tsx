@@ -2,10 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NoirWalletCard } from "./noir-wallet-card";
 
-const { detectProvider, getNoirWallet } = vi.hoisted(() => ({ detectProvider: vi.fn(), getNoirWallet: vi.fn() }));
+const { detectProvider, getNoirWallet, mode } = vi.hoisted(() => ({ detectProvider: vi.fn(), getNoirWallet: vi.fn(), mode: { current: "mainnet_readonly" } }));
 vi.mock("@noir-wallet/sdk", () => ({ detectProvider, getNoirWallet }));
 vi.mock("@/lib/api/data-source", () => ({
-  useNetworkMode: () => ({ kind: "mainnet_readonly" }),
+  useNetworkMode: () => ({ kind: mode.current }),
 }));
 
 const accounts = [
@@ -38,6 +38,7 @@ function provider(opts: { authorized?: boolean; reject?: boolean } = {}) {
 describe("NoirWalletCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mode.current = "mainnet_readonly";
     detectProvider.mockRejectedValue(new Error("Noir Wallet is not installed"));
   });
 
@@ -79,10 +80,30 @@ describe("NoirWalletCard", () => {
     await screen.findByText("2.50 ZEC");
     expect(screen.getByTestId("noir-addresses")).toHaveTextContent("t1a");
     expect(screen.getByTestId("noir-addresses")).toHaveTextContent("u1a");
+    expect(screen.getByTestId("noir-transparent-balance")).toHaveTextContent("0 ZEC");
     await screen.findByText("Receive");
     expect(screen.getByTestId("noir-activity-list")).toHaveTextContent("0.25 ZEC");
     expect(screen.queryByText("never render this")).toBeNull();
     expect(fake.zcash.getTransactionHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows transparent as unavailable rather than deriving a value", async () => {
+    const fake = provider({ authorized: true });
+    fake.provider.zcash.getBalance.mockResolvedValue({ transparent: undefined as unknown as string, shielded: "2.50", available: "2.00", total: "2.60", accounts: [{ ...accounts[0], synced: true, balance: { transparent: undefined as unknown as string, shielded: "2.50", available: "2.00", total: "2.60" } }] });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText("2.50 ZEC");
+    expect(screen.getByTestId("noir-transparent-balance")).toHaveTextContent("Unavailable");
+  });
+
+  it("observes an already-authorized wallet while backend health is unknown", async () => {
+    const fake = provider({ authorized: true });
+    mode.current = "unknown";
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard allowWhenBackendUnavailable />);
+    await screen.findByText("2.50 ZEC");
+    expect(fake.zcash.getAccounts).toHaveBeenCalledTimes(1);
+    expect(fake.zcash.connect).not.toHaveBeenCalled();
   });
 
   it("refuses testnet-looking accounts instead of presenting them as mainnet", async () => {
