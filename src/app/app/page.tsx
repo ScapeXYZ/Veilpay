@@ -7,6 +7,7 @@ import { PaymentBadge } from "@/components/payment";
 import { AgentSummary } from "@/components/agent-summary";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag } from "@/components/source";
+import { SpendingChart } from "@/components/spending-chart";
 import { Badge, Card, ErrorBox, Meter, Skeleton, Zec } from "@/components/ui";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useAgent, useHealth, usePayments, useSelectedAgent } from "@/lib/api/hooks";
@@ -104,6 +105,8 @@ function Dashboard() {
           <Zec zat={u.spentZat} />
         </Metric>
       </div>
+
+      <SpendingChart agentId={agentId} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-5">
