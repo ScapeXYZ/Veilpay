@@ -246,13 +246,17 @@ export function PageHeader({ title, subtitle, right }: { title: string; subtitle
  */
 export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"; children: ReactNode }) {
   const { data: s, isLoading, error, refetch } = useSession();
+  const health = useHealth();
   const sw = useSwitchContext();
   const { mutate, isPending, isError } = sw;
   const wrong = !!s && s.context !== ctx;
   useEffect(() => {
     if (wrong && !isPending && !isError) mutate(ctx);
   }, [wrong, isPending, isError, mutate, ctx]);
-  if (isLoading) return <Skeleton className="h-40" />;
+  // In live mode the session query deliberately waits for the server-owned
+  // network mode. Keep that bootstrap state visible and announced instead of
+  // mistaking a disabled query for a missing session.
+  if (health.isLoading || isLoading) return <Skeleton className="h-40" />;
   if (error || !s) return <ErrorBox>
     <p>Could not load your session. {errorText(error)}</p>
     <Button variant="secondary" onClick={() => refetch()}>Try again</Button>
