@@ -18,4 +18,9 @@ describe("networkModeOf demo safety", () => {
     const mode = networkModeOf({ ...seedHealth(), network: "mainnet", mode: "mock", walletBackend: "mock" }, "live");
     expect(mode).toMatchObject({ kind: "mainnet_readonly", canWrite: false, canExecute: false });
   });
+
+  it("fails closed when a production deployment is pointed at mock health", () => {
+    const health = { ...seedHealth(), network: "regtest" as const, mode: "mock" as const, walletBackend: "mock" as const };
+    expect(networkModeOf(health, "live", false, false)).toMatchObject({ kind: "unknown", canWrite: false, canExecute: false });
+  });
 });

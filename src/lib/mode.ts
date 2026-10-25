@@ -1,4 +1,5 @@
 import type { Health } from "@/lib/contract/schemas";
+import { isExplicitNonProductionMockMode } from "./production-gates";
 
 /**
  * One server-owned network mode for the whole app. Derived from GET /health only; never a client
@@ -27,8 +28,13 @@ const MAINNET_REASON = "Mainnet is read-only in VeilPay. Sending, payment reques
 const UNKNOWN_REASON = "VeilPay cannot tell which network the server is on, so nothing that changes money or rules is offered.";
 const REGTEST_MOCK_REASON = "This regtest demo is simulated by the backend. It cannot sign, broadcast, settle, or move funds.";
 
-export function networkModeOf(health: Health | undefined, clientMode: "mock" | "live", healthError = false): NetworkMode {
-  if (clientMode === "mock")
+export function networkModeOf(
+  health: Health | undefined,
+  clientMode: "mock" | "live",
+  healthError = false,
+  mockUiAllowed = isExplicitNonProductionMockMode(),
+): NetworkMode {
+  if (clientMode === "mock" && mockUiAllowed)
     return {
       kind: "mock",
       label: "Simulation · No funds move",
@@ -60,7 +66,7 @@ export function networkModeOf(health: Health | undefined, clientMode: "mock" | "
     };
   // A network name alone is never permission to execute. The one regtest exception is
   // the server's explicit mock capability; it is a simulation, not a signing path.
-  if (health.network === "regtest" && health.mode === "mock" && health.walletBackend === "mock")
+  if (mockUiAllowed && health.network === "regtest" && health.mode === "mock" && health.walletBackend === "mock")
     return {
       kind: "mock",
       label: "Regtest simulation · No funds move",
@@ -80,7 +86,7 @@ export function networkModeOf(health: Health | undefined, clientMode: "mock" | "
       writeBlockedReason: UNKNOWN_REASON,
       executeBlockedReason: UNKNOWN_REASON,
     };
-  if (health.mode === "mock" && health.walletBackend === "mock")
+  if (mockUiAllowed && health.mode === "mock" && health.walletBackend === "mock")
     return { ...networkModeOf(undefined, "mock"), detail: "The server is in practice mode. No real money moves." };
   if (health.mode === "mock" || health.walletBackend === "mock")
     return {

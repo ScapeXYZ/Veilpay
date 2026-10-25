@@ -219,13 +219,13 @@ function DemoSimulation() {
 /** The isolated fixture is intentionally unavailable from the mainnet build. */
 export default function DemoPage() {
   const mode = useNetworkMode();
-  if (mode.kind === "mainnet_readonly") {
+  if (mode.kind !== "mock") {
     return (
       <PublicShell>
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-16 lg:px-8">
           <h1 className="text-2xl font-semibold text-zinc-50">Interactive demo unavailable</h1>
-          <p className="text-zinc-400">This mainnet-only build does not expose simulated balances, transactions, or confirmations.</p>
-          <Link href="/app" className="text-accent-300 underline">Open the mainnet wallet overview</Link>
+          <p className="text-zinc-400">This build does not expose simulated balances, transactions, or confirmations unless an isolated non-production mock fixture is explicitly enabled.</p>
+          <Link href="/app" className="text-accent-300 underline">Open the wallet overview</Link>
         </div>
       </PublicShell>
     );
