@@ -5,7 +5,9 @@ import Link from "next/link";
 import { use } from "react";
 import { PaymentDetail } from "@/components/payment";
 import { PageHeader, RequireContext } from "@/components/shell";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 import { Button, Card, ErrorBox, Skeleton } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, usePayment } from "@/lib/api/hooks";
 
 function Detail({ id }: { id: string }) {
@@ -26,6 +28,18 @@ function Detail({ id }: { id: string }) {
 }
 
 export default function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
+  const mode = useNetworkMode();
+  if (mode.kind === "mainnet_readonly" || mode.kind === "unknown") {
+    return (
+      <>
+        <PageHeader
+          title={mode.kind === "unknown" ? "Payment details unavailable" : "Payment details unavailable on mainnet"}
+          subtitle={mode.kind === "unknown" ? "Server status is unavailable, so VeilPay cannot retrieve agent payment data." : "Mainnet observation is wallet-only. VeilPay does not retrieve or create agent payment records here."}
+        />
+        <MainnetReadOnlyNotice area="Payment details" unknown={mode.kind === "unknown"} />
+      </>
+    );
+  }
   const { id } = use(params);
   return (
     <>
