@@ -9,6 +9,7 @@ import { useDataSource, useNetworkMode } from "@/lib/api/data-source";
 import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec } from "@/components/ui";
 import { inputCls } from "@/lib/styles";
 import { isMockClient } from "@/lib/api";
+import { invoiceBadgeText } from "@/lib/sealed/invoice-badge";
 import { errorText, useApi, useCreateInvoice, useInvoice, useInvoices } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import { parseZecInput } from "@/lib/zat";
@@ -83,6 +84,8 @@ function CreateInvoiceForm() {
 
 function Invoices() {
   const { data, isLoading, error } = useInvoices();
+  const mode = useNetworkMode();
+  const api = useApi();
   if (isLoading) return <Skeleton className="h-40" />;
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
   const items = data?.items ?? [];
@@ -100,7 +103,7 @@ function Invoices() {
                   <div className="font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
                 <td className="whitespace-nowrap py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
-                <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "paid late" : i.status}</Badge></td>
+                <td className="py-2 text-right"><Badge tone={tone[i.status]}><span data-testid={`invoice-badge-${i.id}`}>{invoiceBadgeText(i.status, mode.kind === "mock" || isMockClient(api))}</span></Badge></td>
               </tr>
             ))}
           </tbody>

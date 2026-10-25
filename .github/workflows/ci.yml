@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, integration/veilpay-milestone6, chore/demo-readiness]
+    branches: [main, integration/zecathon-final, integration/veilpay-milestone6, chore/demo-readiness]
 
 permissions:
   contents: read

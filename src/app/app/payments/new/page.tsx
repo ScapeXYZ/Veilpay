@@ -55,11 +55,7 @@ function NewPayment() {
   const p = live ?? created;
 
   if (mode.kind === "mainnet_readonly")
-    return (
-      <Notice tone="info" title={<span className="flex items-center gap-2"><Lock size={14} aria-hidden /> No new payments on mainnet</span>} testId="new-payment-mainnet">
-        VeilPay only watches the main network; it never requests or sends payments there. Existing observations are in <Link href="/app/activity" className="text-accent-300 underline">Activity</Link>.
-      </Notice>
-    );
+    return <MainnetPaymentDisabled />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -113,13 +109,28 @@ function NewPayment() {
   );
 }
 
+function MainnetPaymentDisabled() {
+  return (
+    <Notice tone="info" title={<span className="flex items-center gap-2"><Lock size={14} aria-hidden /> No new payments on mainnet</span>} testId="new-payment-mainnet">
+      VeilPay only watches the main network; it never requests or sends payments there. Existing observations are in <Link href="/app/activity" className="text-accent-300 underline">Activity</Link>.
+    </Notice>
+  );
+}
+
+function NewPaymentRoute() {
+  const mode = useNetworkMode();
+  // A confirmed mainnet report is sufficient to fail closed. Do this before
+  // the customer-session gate, because mainnet intentionally has no session
+  // or payment-request surface at all.
+  if (mode.kind === "mainnet_readonly") return <MainnetPaymentDisabled />;
+  return <RequireContext ctx="customer"><NewPayment /></RequireContext>;
+}
+
 export default function NewPaymentPage() {
   return (
     <>
       <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the VeilPay server reports enough network confirmations; in practice mode they are simulated." />
-      <RequireContext ctx="customer">
-        <NewPayment />
-      </RequireContext>
+      <NewPaymentRoute />
     </>
   );
 }

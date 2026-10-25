@@ -11,7 +11,8 @@ import { Providers } from "@/app/providers";
 import { LiveApiClient } from "@/lib/api/live";
 import { MockApiClient } from "@/lib/api/mock";
 import { ApiError } from "@/lib/api/types";
-import { usePayments } from "@/lib/api/hooks";
+import { usePayments, useSession } from "@/lib/api/hooks";
+import { seedHealth } from "@/lib/api/fixtures";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 afterEach(() => {
@@ -22,6 +23,11 @@ afterEach(() => {
 function PaymentsProbe() {
   const { data } = usePayments();
   return <p>{data ? `payments:${data.items.length}` : "waiting"}</p>;
+}
+
+function SessionProbe() {
+  const { isFetching } = useSession();
+  return <p>{isFetching ? "checking-session" : "session-idle"}</p>;
 }
 
 describe("dev mode: session readiness", () => {
@@ -56,6 +62,18 @@ describe("dev mode: session readiness", () => {
     );
     await waitFor(() => expect(screen.getAllByText(/^payments:/)).toHaveLength(2));
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not look up or create a demo session when live health reports mainnet", async () => {
+    const api = new LiveApiClient();
+    vi.spyOn(api, "getHealth").mockResolvedValue({ ...seedHealth(), network: "mainnet", mode: "disabled", walletBackend: "zingo" });
+    const getSession = vi.spyOn(api, "getSession");
+    const createDemoSession = vi.spyOn(api, "createDemoSession");
+    render(<Providers client={api}><SessionProbe /></Providers>);
+    await waitFor(() => expect(api.getHealth).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("session-idle")).toBeInTheDocument());
+    expect(getSession).not.toHaveBeenCalled();
+    expect(createDemoSession).not.toHaveBeenCalled();
   });
 });
 

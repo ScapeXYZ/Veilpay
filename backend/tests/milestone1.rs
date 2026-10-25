@@ -935,6 +935,40 @@ async fn cors_allows_only_configured_origin_with_credentials() {
         }
     }
 }
+
+#[tokio::test]
+async fn health_read_does_not_compete_for_the_writer_lock() {
+    let path = std::env::temp_dir().join(format!("veilpay-health-{}.db", uuid::Uuid::new_v4()));
+    let url = format!("sqlite://{}", path.display());
+    let f = Fixture::at(&url).await;
+
+    // Hold SQLite's one writer slot. A health probe is read-only and must stay
+    // available rather than waiting for the write busy timeout and becoming a
+    // backend 500.
+    let mut writer = f.app.pool.acquire().await.unwrap();
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        f.router.clone().oneshot(
+            Request::builder()
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        ),
+    )
+    .await
+    .expect("health must not wait on a write lock")
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
+    drop(writer);
+    f.app.pool.close().await;
+    std::fs::remove_file(path).unwrap();
+}
+
 #[tokio::test]
 async fn acknowledgment_and_signing_key_survive_database_reopen() {
     let path = std::env::temp_dir().join(format!("veilpay-test-{}.db", uuid::Uuid::new_v4()));

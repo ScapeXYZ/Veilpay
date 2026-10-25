@@ -49,7 +49,7 @@ export function StatusBadge({ tone = "neutral", children, testId }: { tone?: Ton
 
 export function Card({ children, className, title, action, testId }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; testId?: string }) {
   return (
-    <section data-testid={testId} className={clsx("rounded-2xl border border-zinc-800 bg-zinc-900 p-5", className)}>
+    <section data-testid={testId} className={clsx("rounded-[14px] border border-line bg-zinc-900 p-5", className)}>
       {(title || action) && (
         <header className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           {title && <h2 className="min-w-0 text-sm font-semibold tracking-wide text-zinc-200">{title}</h2>}
