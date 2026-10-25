@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const frontendPort = 3101;
-const backendPort = 4001;
+const frontendPort = Number(process.env.VEILPAY_DEMO_FRONTEND_PORT ?? 3101);
+const backendPort = Number(process.env.VEILPAY_DEMO_BACKEND_PORT ?? 4001);
 // Chromium treats localhost as a secure local context, so Axum's intentionally Secure
 // __Host session cookie survives browser navigation. Keep the servers loopback-only.
 const frontendOrigin = `http://localhost:${frontendPort}`;
-const database = `/tmp/veilpay-playwright-${process.pid}.sqlite`;
+const database = process.env.VEILPAY_DEMO_DATABASE ?? `/tmp/veilpay-playwright-${process.pid}.sqlite`;
 
 export default defineConfig({
   testDir: "./tests/browser",

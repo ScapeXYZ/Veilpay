@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='veilpay-http-') as directory:
                                                          'requiresOperatorConfirmation': True, 'phase': 'prepared'})]:
                 payment = dict(id=f'pay_{suffix}', agentId='agt_fixture00001', merchantId='mer_demo',
                                invoiceId='inv_fixture00001', amountZat='1', reference='Persisted mock review fixture',
-                               status='submitted', createdAt=now, txid=None, pool=None, mockRef='mock_fixture',
+                               status='submitted', createdAt=now, txid=None, pool=None, mockRef='mock_00000000000000000000000000000001',
                                decision=dict(id='dec_fixture', result='authorized', policyVersion=1,
                                              evaluatedAt=now, violations=[], auditHash='fixture'), timeline=[],
                                walletOperation=dict(id=f'op_{suffix}', attempt=1, **operation))

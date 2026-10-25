@@ -129,7 +129,7 @@ export function seedPayments(): Payment[] {
         reference: "pastries for standup",
         status: "confirmed",
         confirmations: 3,
-        mockRef: "MOCK-REF-0001",
+        mockRef: "mock_00000000000000000000000000000001",
         walletOperation: { id: "wop_mock0001", state: "final", attempt: 1, lastReconciledAt: at(-30), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(-58) },
@@ -149,7 +149,7 @@ export function seedPayments(): Payment[] {
         reference: "compostable cups",
         status: "confirming",
         confirmations: 0,
-        mockRef: "MOCK-REF-0002",
+        mockRef: "mock_00000000000000000000000000000002",
         walletOperation: { id: "wop_mock0002", state: "broadcast", attempt: 1, lastReconciledAt: at(55), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(50) },
@@ -167,7 +167,7 @@ export function seedPayments(): Payment[] {
         amountZat: "5000000",
         reference: "syrups restock",
         status: "submitted",
-        mockRef: "MOCK-REF-0003",
+        mockRef: "mock_00000000000000000000000000000003",
         failure: {
           code: "OUTCOME_UNKNOWN",
           message: "The wallet did not confirm whether the send happened. The backend is reconciling; it will not resend.",
@@ -190,7 +190,7 @@ export function seedPayments(): Payment[] {
         amountZat: "8000000",
         reference: "kettle replacement",
         status: "submitted",
-        mockRef: "MOCK-REF-0004",
+        mockRef: "mock_00000000000000000000000000000004",
         failure: {
           code: "OUTCOME_UNKNOWN",
           message: "Unresolved past the reconcile window. An operator must review it; it will never be resent automatically.",
@@ -214,7 +214,7 @@ export function seedPayments(): Payment[] {
         reference: "branded mugs",
         status: "confirming",
         confirmations: 0,
-        mockRef: "MOCK-REF-0005",
+        mockRef: "mock_00000000000000000000000000000005",
         walletOperation: { id: "wop_mock0005", state: "broadcast", attempt: 1, lastReconciledAt: at(58), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(-48) },
@@ -234,7 +234,7 @@ export function seedPayments(): Payment[] {
         amountZat: "3500000",
         reference: "tamper",
         status: "failed",
-        mockRef: "MOCK-REF-0006",
+        mockRef: "mock_00000000000000000000000000000006",
         failure: {
           code: "EXPIRED_UNMINED",
           message: "After a reorg the transaction passed its expiry height and is absent from chain and mempool.",
@@ -261,7 +261,7 @@ export function seedPayments(): Payment[] {
         amountZat: "6500000",
         reference: "aprons",
         status: "failed",
-        mockRef: "MOCK-REF-0007",
+        mockRef: "mock_00000000000000000000000000000007",
         failure: {
           code: "BROADCAST_REJECTED",
           message: "The node rejected the transaction and the wallet confirms it is not pending.",
@@ -323,7 +323,7 @@ export function seedPayments(): Payment[] {
         reference: "filter papers",
         status: "confirmed",
         confirmations: 2,
-        mockRef: "MOCK-REF-0010",
+        mockRef: "mock_00000000000000000000000000000010",
         walletOperation: { id: "wop_mock0010", state: "final", attempt: 1, lastReconciledAt: at(-20), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(-35) },
@@ -343,7 +343,7 @@ export function seedPayments(): Payment[] {
         reference: "grinder service",
         status: "confirmed",
         confirmations: 2,
-        mockRef: "MOCK-REF-0011",
+        mockRef: "mock_00000000000000000000000000000011",
         walletOperation: { id: "wop_mock0011", state: "final", attempt: 1, lastReconciledAt: at(-12), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(-30) },
@@ -363,7 +363,7 @@ export function seedPayments(): Payment[] {
         reference: "oat milk",
         status: "confirming",
         confirmations: 0,
-        mockRef: "MOCK-REF-0012",
+        mockRef: "mock_00000000000000000000000000000012",
         walletOperation: { id: "wop_mock0012", state: "broadcast", attempt: 1, lastReconciledAt: at(56), needsOperator: false },
         timeline: [
           { status: "requested", kind: "status", at: at(-25) },

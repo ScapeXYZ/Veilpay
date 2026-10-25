@@ -478,6 +478,10 @@ async fn acknowledgment_is_signed_persisted_replayed_and_unique() {
         .ack(&p, "ack-key-one", json!({"note":"Mock receipt accepted"}))
         .await;
     assert_eq!(first.status, 201);
+    assert_eq!(
+        first.body["statementType"],
+        "merchant_acknowledgment_simulation_not_settlement_proof"
+    );
     let secret: String =
         sqlx::query_scalar("SELECT value FROM app_secrets WHERE name='merchant_ack'")
             .fetch_one(&f.app.pool)
