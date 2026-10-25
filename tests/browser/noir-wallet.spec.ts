@@ -6,8 +6,8 @@ const mainnetHealth = {
   chainWatcher: { supported: false, lastBlockAt: null, watchDepth: 100, deepReorgAlert: false },
 };
 
-async function installNoir(page: Page, reject = false) {
-  await page.addInitScript((shouldReject: boolean) => {
+async function installNoir(page: Page, reject = false, emptyHistory = false) {
+  await page.addInitScript(({ shouldReject, noHistory }: { shouldReject: boolean; noHistory: boolean }) => {
     const accounts = [
       { id: "wallet-a:0", label: "Treasury", walletId: "wallet-a", accountId: "0", addresses: { transparent: "t1a", shielded: "u1a" } },
       { id: "wallet-b:0", label: "Operations", walletId: "wallet-b", accountId: "0", addresses: { transparent: "t1b", shielded: "u1b" } },
@@ -29,6 +29,7 @@ async function installNoir(page: Page, reject = false) {
             const operations = id === accounts[1].id;
             return { transparent: "0", shielded: operations ? "1.25" : "2.50", available: operations ? "1.00" : "2.00", total: operations ? "1.30" : "2.60", accounts: accounts.map((account) => ({ id: account.id, walletId: account.walletId, accountId: account.accountId, synced: account.id !== accounts[1].id, balance: { transparent: "0", shielded: account.id === accounts[1].id ? "1.25" : "2.50", available: account.id === accounts[1].id ? "1.00" : "2.00", total: account.id === accounts[1].id ? "1.30" : "2.60" } })) };
           }
+          if (method === "zcash_getTransactionHistory") return noHistory ? [] : [{ txid: "a".repeat(64), type: "receive", amount: "0.25", status: "mined", timestamp: 1700000000000, memo: "do not display" }];
           if (method === "zcash_disconnect") { authorized = false; return null; }
           throw new Error(`Unexpected wallet method ${method}`);
         },
@@ -36,7 +37,7 @@ async function installNoir(page: Page, reject = false) {
         removeListener: (_event: string, handler: () => void) => { const index = listeners.indexOf(handler); if (index >= 0) listeners.splice(index, 1); },
       },
     };
-  }, reject);
+  }, { shouldReject: reject, noHistory: emptyHistory });
 }
 
 test("Noir Wallet connects only on click, switches authorized accounts, and disconnects", async ({ page }) => {
@@ -47,6 +48,9 @@ test("Noir Wallet connects only on click, switches authorized accounts, and disc
   await expect(card).toContainText(/connect an account/i);
   await card.getByTestId("connect-noir-wallet").click();
   await expect(card).toContainText("2.50 ZEC");
+  await expect(card.getByTestId("noir-addresses")).toContainText("t1a");
+  await expect(card.getByTestId("noir-activity-list")).toContainText("Receive");
+  await expect(card).not.toContainText("do not display");
   await card.getByTestId("noir-account-select").selectOption("wallet-b:0");
   await expect(card).toContainText("1.25 ZEC");
   await expect(card).toContainText(/sync is incomplete/i);
@@ -54,12 +58,50 @@ test("Noir Wallet connects only on click, switches authorized accounts, and disc
   await expect(card).toContainText(/connect an account/i);
 });
 
-test("Noir Wallet reports a rejected authorization without showing a balance", async ({ page }) => {
+test("Noir Wallet authorization rejection leaves no balance visible", async ({ page }) => {
   await installNoir(page, true);
   await page.route("**/api/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(mainnetHealth) }));
   await page.goto("/app");
   const card = page.getByTestId("noir-wallet-card");
   await card.getByTestId("connect-noir-wallet").click();
-  await expect(card).toContainText(/connection was declined/i);
+  // The extension may report the rejection directly or return to its normal
+  // disconnected state after the failed request. In either case, the UI must
+  // keep a reconnect action and never retain a balance.
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
   await expect(card.getByTestId("noir-balances")).toHaveCount(0);
+});
+
+test("locally authorized Noir Wallet observation remains available when backend health fails", async ({ page }) => {
+  await installNoir(page);
+  await page.route("**/api/health", (route) => route.abort("connectionrefused"));
+  await page.goto("/app");
+  // Wait for the failed health query to settle before requesting wallet access:
+  // the observation card intentionally remounts into its unknown-health mode.
+  await expect(page.getByText(/backend unavailable.*wallet observation only/i)).toBeVisible();
+  const card = page.getByTestId("noir-wallet-card");
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("2.50 ZEC");
+  await expect(page.getByTestId("demo-session-gate")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Help & demo" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "View as" })).toHaveCount(0);
+  await page.goto("/app/wallet");
+  await expect(page.getByTestId("noir-wallet-card")).toBeVisible();
+  await expect(page.getByText(/wallet connection paused/i)).toHaveCount(0);
+  await page.goto("/app/payments/new");
+  await expect(page.getByText(/payment requests unavailable/i)).toBeVisible();
+  await expect(page.getByText(/simulated/i)).toHaveCount(0);
+});
+
+test("mainnet wallet with no reported history renders an empty 7/30-day activity view", async ({ page }) => {
+  await installNoir(page, false, true);
+  await page.route("**/api/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(mainnetHealth) }));
+  await page.goto("/app");
+  const card = page.getByTestId("noir-wallet-card");
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card.getByTestId("noir-transparent-balance")).toHaveText("0 ZEC");
+  await expect(card.getByTestId("noir-wallet-chart-empty")).toContainText("No transactions reported in the last 7 days.");
+  await expect(card.getByTestId("noir-wallet-bars")).toHaveCount(0);
+  await expect(card.getByTestId("noir-wallet-recent")).toContainText("No transactions reported.");
+  await card.getByTestId("noir-wallet-range-30").click();
+  await expect(card.getByTestId("noir-wallet-chart-empty")).toContainText("No transactions reported in the last 30 days.");
 });

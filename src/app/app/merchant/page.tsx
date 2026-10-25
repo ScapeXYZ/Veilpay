@@ -16,6 +16,7 @@ import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
 import { InvoiceRequest } from "@/components/invoice-request";
 import { VerificationCard } from "@/components/verification-card";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function CreateInvoice() {
   const mode = useNetworkMode();
@@ -103,7 +104,7 @@ function Invoices() {
                   <div className="font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
                 <td className="whitespace-nowrap py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
-                <td className="py-2 text-right"><Badge tone={tone[i.status]}><span data-testid={`invoice-badge-${i.id}`}>{invoiceBadgeText(i.status, mode.kind === "mock" || isMockClient(api))}</span></Badge></td>
+                <td className="py-2 text-right"><Badge tone={tone[i.status]}><span data-testid={`invoice-badge-${i.id}`}>{invoiceBadgeText(i.status, mode.kind === "mock" && isMockClient(api))}</span></Badge></td>
               </tr>
             ))}
           </tbody>
@@ -115,12 +116,13 @@ function Invoices() {
 
 function Lookup() {
   const api = useApi();
+  const mock = useNetworkMode().kind === "mock" && isMockClient(api);
   const handoff = useHandoff();
   // mock-only discovery (contract gap #1): the live contract has no merchant list of incoming payments
   const { data: candidates = [] } = useQuery({
     queryKey: ["mock-merchant-payment-ids"],
-    queryFn: () => (isMockClient(api) ? api.merchantPaymentIds() : []),
-    enabled: isMockClient(api),
+    queryFn: () => (mock ? api.merchantPaymentIds() : []),
+    enabled: mock,
     refetchInterval: 4000,
   });
   const ids = Array.from(new Set([...handoff.paymentIds, ...candidates]));
@@ -133,7 +135,7 @@ function Lookup() {
         <ol className="mb-3 space-y-1 text-xs text-zinc-400" data-testid="verify-steps">
           <li><span className="font-semibold text-zinc-300">1.</span> On the customer&apos;s payment page, find <b className="text-zinc-200">Payment ID</b> under Payment details and press <b className="text-zinc-200">Copy</b>.</li>
           <li><span className="font-semibold text-zinc-300">2.</span> Paste it below and press <b className="text-zinc-200">Check</b> (or Enter).</li>
-          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt. In practice mode a match means the simulated payment matches the invoice, not that funds arrived.</li>
+          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt.{mock && " In practice mode a match means the simulated payment matches the invoice, not that funds arrived."}</li>
         </ol>
         <form
           className="flex gap-2"
@@ -162,7 +164,7 @@ function Lookup() {
             ))}
           </div>
         )}
-        {isMockClient(api) && <p className="mt-2 text-xs text-fuchsia-300/80">Practice mode: these IDs come from the practice data. The real service does not list merchant payments yet.</p>}
+        {mock && <p className="mt-2 text-xs text-fuchsia-300/80">Practice mode: these IDs come from the practice data. The real service does not list merchant payments yet.</p>}
       </Card>
       {current && <VerificationCard key={current} paymentId={current} />}
     </div>
@@ -170,15 +172,18 @@ function Lookup() {
 }
 
 export default function MerchantPage() {
+  const mode = useNetworkMode();
+  const api = useApi();
+  const mock = mode.kind === "mock" && isMockClient(api);
   return (
     <>
       <PageHeader
         title="Merchant portal"
-        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys. In practice mode receipts and confirmations are simulated."
+        subtitle={`Juniper Coffee creates invoices and checks they were paid. The customer shares no keys.${mock ? " In practice mode receipts and confirmations are simulated." : ""}`}
       />
-      <RequireContext ctx="merchant">
+      {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Merchant tools" unknown={mode.kind === "unknown"} /> : <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What a receipt check tells you">
-          Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows (simulated in practice mode). In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
+          Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows{mock && " (simulated in practice mode)"}. {mock ? "In this demo the" : "The"} VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
         </Notice>
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Lookup />
@@ -187,7 +192,7 @@ export default function MerchantPage() {
             <Invoices />
           </div>
         </div>
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }

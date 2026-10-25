@@ -123,13 +123,15 @@ function NewPaymentRoute() {
   // the customer-session gate, because mainnet intentionally has no session
   // or payment-request surface at all.
   if (mode.kind === "mainnet_readonly") return <MainnetPaymentDisabled />;
+  if (mode.kind === "unknown") return <Notice tone="neutral" title="Payment requests unavailable">VeilPay cannot confirm server status, so payment requests remain disabled.</Notice>;
   return <RequireContext ctx="customer"><NewPayment /></RequireContext>;
 }
 
 export default function NewPaymentPage() {
+  const mode = useNetworkMode();
   return (
     <>
-      <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the VeilPay server reports enough network confirmations; in practice mode they are simulated." />
+      <PageHeader title="New payment request" subtitle={mode.kind === "unknown" ? "Server status is unavailable. Payment requests are disabled." : "Check a payment against your rules before anything moves. Nothing counts as paid until the VeilPay server reports enough network confirmations; in practice mode they are simulated."} />
       <NewPaymentRoute />
     </>
   );

@@ -9,7 +9,11 @@ const database = process.env.VEILPAY_DEMO_DATABASE ?? `/tmp/veilpay-playwright-$
 
 export default defineConfig({
   testDir: "./tests/browser",
+  // The loopback backend uses one explicit fixture database and cookie scope.
+  // Keep scenarios isolated by running them serially; capture has its own config.
+  testIgnore: "demo-capture.spec.ts",
   fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI ? "github" : "list",
@@ -20,13 +24,16 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `NETWORK=regtest WALLET_BACKEND=mock DATABASE_URL=sqlite://${database} FRONTEND_ORIGIN=${frontendOrigin} BIND_ADDR=127.0.0.1:${backendPort} cargo run --locked --manifest-path backend/Cargo.toml`,
+      command: `NETWORK=regtest WALLET_BACKEND=mock VEILPAY_DEMO_SESSION_RATE_LIMIT=1000 DATABASE_URL=sqlite://${database} FRONTEND_ORIGIN=${frontendOrigin} BIND_ADDR=127.0.0.1:${backendPort} cargo run --locked --manifest-path backend/Cargo.toml`,
       url: `http://127.0.0.1:${backendPort}/api/health`,
       reuseExistingServer: false,
       timeout: 120_000,
     },
     {
-      command: `NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:${backendPort}/api npm run dev -- -p ${frontendPort}`,
+      // Do not call `npm run dev`: its production default pins the mainnet
+      // backend on port 4000. This harness intentionally supplies its own
+      // loopback regtest/mock endpoint above.
+      command: `NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:${backendPort}/api ./node_modules/.bin/next dev -H 127.0.0.1 -p ${frontendPort}`,
       url: frontendOrigin,
       reuseExistingServer: false,
       timeout: 120_000,

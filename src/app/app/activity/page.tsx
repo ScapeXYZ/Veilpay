@@ -11,6 +11,7 @@ import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useHealth, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 const VIEWS: { id: string; label: string; match: (p: Payment) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
@@ -71,7 +72,7 @@ function ActivityTable() {
           </div>
         </div>
         {shown.length === 0 ? (
-          <p className="p-5 text-sm text-zinc-500">Nothing here right now.</p>
+          <p className="p-5 text-sm text-zinc-500">No activity yet. Payments your agent requests show here once the VeilPay server records them.</p>
         ) : (
           <table className="block w-full text-sm md:table" data-testid="activity-table">
             <thead className="hidden text-left text-xs uppercase tracking-wide text-zinc-500 md:table-header-group">
@@ -112,12 +113,13 @@ function ActivityTable() {
 }
 
 export default function ActivityPage() {
+  const mode = useNetworkMode();
   return (
     <>
       <PageHeader title="Activity" subtitle="Everything that happened to your agent's payments, newest first." />
-      <RequireContext ctx="customer">
+      {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Activity" unknown={mode.kind === "unknown"} /> : <RequireContext ctx="customer">
         <ActivityTable />
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }

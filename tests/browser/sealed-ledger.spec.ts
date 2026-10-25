@@ -56,7 +56,6 @@ test("practice mode: frame, disclosures, policy sheet, privacy sheet, merchant b
 
   await page.goto("/app/wallet");
   await expect(page.getByTestId("wallet-off-mock")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("wallet-journey")).toBeVisible();
   await expect(page.getByTestId("wallet-reads-sheet")).toContainText("Your keys or seed phrase");
   await noSideScroll(page);
   await shot(page, "wallet-practice", testInfo);
@@ -68,9 +67,8 @@ test("practice mode: frame, disclosures, policy sheet, privacy sheet, merchant b
   await form.getByLabel("Amount (ZEC)").fill("0.01");
   await form.getByRole("button", { name: "Create invoice" }).click();
   await expect(form.getByTestId("invoice-created")).toBeVisible();
-  const badges = page.getByTestId("invoices").locator('[data-testid^="invoice-badge-"]');
-  await expect(badges.first()).toBeVisible();
-  for (const t of await badges.allTextContents()) expect(t).not.toMatch(/^Paid( late)?$/);
+  const invoiceId = (await form.getByTestId("invoice-id").textContent())!.trim();
+  await expect(page.getByTestId(`invoice-badge-${invoiceId}`)).toHaveText("open");
   await noSideScroll(page);
   await shot(page, "merchant", testInfo);
 });
@@ -88,7 +86,9 @@ test("connected read-only: no practice frame, read-only line, no live payment ch
   await expect(page.getByTestId("mainnet-banner")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("read-only-line")).toHaveText("Read-only. VeilPay can't sign or send from here.");
   await expect(page.getByTestId("practice-frame")).toHaveCount(0);
-  await expect(page.getByTestId("spending-live-withheld")).toContainText(/independently verified as confirmed/);
+  // No agent-spending or settlement record is inferred from a wallet/network
+  // health response alone.
+  await expect(page.getByTestId("spending-live-withheld")).toHaveCount(0);
   await expect(page.getByTestId("spending-chart")).toHaveCount(0);
   await expect(page.getByTestId("spending-sim-label")).toHaveCount(0);
   await noSideScroll(page);

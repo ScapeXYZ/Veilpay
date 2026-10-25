@@ -11,6 +11,7 @@ import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, usePayment, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { unresolvedOf } from "@/lib/present";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 const FILTERS: { id: string; label: string; match: (p: Payment) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
@@ -61,7 +62,7 @@ function Payments() {
         {isLoading ? (
           <Skeleton className="h-64" />
         ) : shown.length === 0 ? (
-          <p className="p-3 text-sm text-zinc-500">Nothing here.</p>
+          <p className="p-3 text-sm text-zinc-500">No payments match this filter.</p>
         ) : (
           <div className="flex max-h-[70vh] flex-col gap-1 overflow-y-auto">
             {shown.map((p) => (
@@ -93,12 +94,13 @@ function NewButton() {
 }
 
 export default function PaymentsPage() {
+  const mode = useNetworkMode();
   return (
     <>
       <PageHeader title="Payments" subtitle="Every payment your agent asked for, and where it stands. A payment with an unknown outcome is never resent." right={<NewButton />} />
-      <RequireContext ctx="customer">
+      {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Payments" unknown={mode.kind === "unknown"} /> : <RequireContext ctx="customer">
         <Payments />
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }

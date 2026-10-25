@@ -11,7 +11,7 @@ Use a disposable database outside the repository:
 ```bash
 NETWORK=regtest WALLET_BACKEND=mock \
 DATABASE_URL=sqlite:///tmp/veilpay-demo-readiness.db \
-FRONTEND_ORIGIN=http://127.0.0.1:3100 BIND_ADDR=127.0.0.1:4000 \
+FRONTEND_ORIGIN=http://localhost:3100 BIND_ADDR=127.0.0.1:4000 \
 cargo run --locked --manifest-path backend/Cargo.toml
 ```
 
@@ -22,7 +22,10 @@ NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:4000/api \
 npm run dev
 ```
 
-Open `http://127.0.0.1:3100`. Confirm the health badge/API reports `regtest`,
+Open `http://localhost:3100` (not `127.0.0.1`: the Noir Wallet extension's
+content scripts only match `https://*/*` and `http://localhost/*`, so on
+`127.0.0.1` it never injects `window.noirwallet` and the app shows "wallet not
+found"). Confirm the health badge/API reports `regtest`,
 `mock`, and `walletBackend: mock` before presenting. Remove the disposable
 database afterwards if desired:
 
@@ -131,6 +134,66 @@ not retained.
   unavailable/loading states, allowance rejection, permitted simulation,
   merchant verification, mainnet read-only UI gating, and mock-reference/balance
   wording. It does not turn the mock adapter into a wallet or settlement test.
+
+## Real Noir Wallet extension check (2026-10-25)
+
+Run against the newest pushed `feat/noir-wallet-readonly` head `09db9c9` (the
+Stage 2A dashboard was not on GitHub yet) with the official Noir Wallet
+extension v1.0.39 and a throwaway, never-funded mainnet wallet created in a
+temporary profile (recovery phrase kept in memory only; profile deleted).
+Backend `NETWORK=mainnet`, broadcast disabled; app on `http://localhost:3100`.
+
+| Check | Result |
+|---|---|
+| Real approval popup opens on Connect | pass |
+| Approve connects (connected card, disconnect control) | pass |
+| Disconnect revokes site access (`zcash_getAccounts` returns `null`) and the card resets, also after reload | pass |
+| Overview shows the real shielded + transparent addresses | **fail on `09db9c9`**: the extension returns `u1…`/`t1…` but the page renders neither |
+| Balances are wallet-reported 0 ZEC (shielded, available, total) | pass |
+| Activity is empty and labelled as not shown by VeilPay | pass |
+| No simulated values on the connected card; only `/api/health` is called | pass (the global "Help & demo" tour copy still says payments are simulated) |
+| No recovery phrase, password, memo, key or address in DOM, local/session storage, cookies, IndexedDB, console, requests or responses | pass |
+
+`tests/browser/noir-extension-real.spec.ts` automates these (headed Chromium,
+opt-in via `NOIR_EXT_PATH`). The address check runs with
+`NOIR_EXPECT_ADDRESSES=1` and is expected to pass once the Stage 2A overview
+lands. Headless Chromium cannot open the extension's approval window and the
+extension then answers "User rejected the request", so CI needs a headed
+browser (for example `xvfb-run`). 7-day/30-day charts, totals and recent
+transactions are untested until that code is pushed.
+
+### How to run it
+
+1. Download the official Noir Wallet extension (Chrome Web Store id
+   `mfoghjbpfanobmnoemoepenjjcmfpmdn`, verified with v1.0.39) and unpack the CRX.
+2. Start the backend with `NETWORK=mainnet` (broadcast stays disabled) and the
+   frontend on `http://localhost:3100`. Use `localhost`, never `127.0.0.1`: the
+   extension does not inject `window.noirwallet` there.
+3. Run headed:
+
+   ```sh
+   NOIR_EXT_PATH=/path/to/unpacked NOIR_APP_URL=http://localhost:3100 \
+     xvfb-run -a npx playwright test tests/browser/noir-extension-real.spec.ts \
+     --project=chromium-desktop
+   ```
+
+| Variable | Meaning |
+|---|---|
+| `NOIR_EXT_PATH` | Unpacked extension directory. Unset = the whole spec is skipped. |
+| `NOIR_APP_URL` | App URL. Defaults to `http://localhost:${VEILPAY_DEMO_FRONTEND_PORT:-3101}`. |
+| `NOIR_EXPECT_ADDRESSES=1` | Also run the address-render test (expected to fail until the Stage 2A overview is pushed). |
+
+Wallet rule: the spec creates a new, never-funded wallet in a temporary profile
+for each run. Never point it at a real or funded wallet, never log or screenshot
+the recovery phrase or password, and delete the profile afterwards (the spec does).
+
+### Status (2026-10-25, `09db9c9` + this branch)
+
+- Spec: 3 pass (localhost injection, popup + connect with 0 ZEC and no address
+  in storage, disconnect/revoke incl. reload), 1 skipped (address render, opt-in).
+- Unit tests: vitest 236 pass / 11 skipped. `tsc`: no errors in `src`.
+- Pending on their pushed SHA: re-run with `NOIR_EXPECT_ADDRESSES=1` (check 4),
+  then 7-day/30-day charts, totals and recent transactions.
 
 ## Mainnet restrictions
 

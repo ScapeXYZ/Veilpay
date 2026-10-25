@@ -58,7 +58,7 @@ function ModeCard() {
           <div><dt className="text-zinc-500"><Term k="confirmations">Confirmations needed</Term></dt><dd className="tabular-nums text-zinc-200">{h.confirmationsRequired}</dd></div>
         </dl>
       )}
-      <p className="mt-3 text-[11px] text-zinc-500">Block numbers are what the wallet reports. One number alone does not mean the wallet is fully up to date.</p>
+      <p className="mt-3 text-xs text-zinc-500">Block numbers are what the wallet reports. One number alone does not mean the wallet is fully up to date.</p>
     </Card>
   );
 }
@@ -178,7 +178,21 @@ function MainnetReadOnlyWallet() {
       <ModeCard />
       <NoirWalletCard />
       <Notice tone="neutral" title="VeilPay server observer unavailable">
-        This local backend has no real mainnet observer adapter. Wallet balances above come directly from Noir Wallet; VeilPay is not showing backend activity, confirmations, or transaction history.
+        Wallet balances, local activity, and transaction statuses above come directly from Noir Wallet. VeilPay has no mainnet observer here, so it cannot report agent spending, payment confirmation, or independently verified settlement. Those are separate records, not substitutes for wallet activity.
+      </Notice>
+    </>
+  );
+}
+
+/** Wallet observation is local to the extension and stays available when the
+ * server cannot report its network health. No server-backed surface mounts. */
+function BackendUnavailableWalletObservation() {
+  return (
+    <>
+      <ModeCard />
+      <NoirWalletCard allowWhenBackendUnavailable />
+      <Notice tone="neutral" title="Backend unavailable — wallet observation only">
+        Noir Wallet can still report its own authorized-account data locally. VeilPay cannot show agent spending, payments, policy edits, execution, or settlement while server health is unknown.
       </Notice>
       <LiveChartWithheld />
     </>
@@ -188,13 +202,14 @@ function MainnetReadOnlyWallet() {
 function Overview() {
   const mode = useNetworkMode();
   if (mode.kind === "mainnet_readonly") return <MainnetReadOnlyWallet />;
+  if (mode.kind === "unknown") return <BackendUnavailableWalletObservation />;
   return <RequireContext ctx="customer"><Dashboard /></RequireContext>;
 }
 
 export default function DashboardPage() {
   return (
     <>
-      <PageHeader title="Overview" subtitle="How much your AI agent may spend, what it has paid, and anything that needs you." />
+      <PageHeader title="Overview" subtitle="Wallet-reported mainnet balances and activity, kept separate from VeilPay agent spending and settlement evidence." />
       <Overview />
     </>
   );

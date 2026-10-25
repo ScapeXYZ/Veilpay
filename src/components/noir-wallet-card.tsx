@@ -2,27 +2,31 @@
 
 import { PlugZap, RefreshCw, ShieldCheck, Unplug, Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NoirWalletAdapter, noirWalletErrorState, type NoirAccount, type NoirBalance, waitForNoirWallet } from "@/lib/noir-wallet";
+import { isMainnetNoirAccount, NoirWalletAdapter, noirWalletErrorState, type NoirAccount, type NoirBalance, type NoirTransaction, waitForNoirWallet } from "@/lib/noir-wallet";
 import { useNetworkMode } from "@/lib/api/data-source";
+import { NoirWalletActivity } from "./noir-wallet-activity";
 import { Badge, Button, Card, Notice } from "./ui";
 
-type State = "checking" | "unavailable" | "disconnected" | "connecting" | "connected" | "locked" | "rejected" | "syncing" | "failed";
-type Connected = { adapter: NoirWalletAdapter; accounts: NoirAccount[]; selectedId: string; balance: NoirBalance | null };
+type State = "checking" | "unavailable" | "disconnected" | "connecting" | "connected" | "locked" | "rejected" | "syncing" | "failed" | "wrong_network";
+type Activity = { status: "loading"; entries: null } | { status: "ready"; entries: NoirTransaction[] } | { status: "unavailable" | "failed"; entries: null };
+type Connected = { adapter: NoirWalletAdapter; accounts: NoirAccount[]; selectedId: string; balance: NoirBalance | null; activity: Activity };
 
 function accountName(account: NoirAccount) {
   return account.label || `Account ${account.accountId}`;
 }
 
-function amount(value: string | undefined) {
-  return value === undefined ? "Not reported" : `${value} ZEC`;
+function amount(value: string | null | undefined) {
+  return value == null ? "Unavailable" : `${value} ZEC`;
 }
 
 /**
- * A client-only, read-only connection card. It is not rendered in VeilPay's
- * mock/regtest simulation, keeping the demo harness independent of extensions.
+ * A client-only, mainnet-only, read-only connection card. It is not rendered
+ * for testnet or mock modes, keeping real wallet observation separate from
+ * fixtures and simulations.
  */
-export function NoirWalletCard() {
+export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowWhenBackendUnavailable?: boolean }) {
   const mode = useNetworkMode();
+  const walletObservationAllowed = mode.kind === "mainnet_readonly" || (allowWhenBackendUnavailable && mode.kind === "unknown");
   const [state, setState] = useState<State>("checking");
   const [connected, setConnected] = useState<Connected | null>(null);
   const adapter = useRef<NoirWalletAdapter | null>(null);
@@ -38,11 +42,21 @@ export function NoirWalletCard() {
       clear(nullMeansLocked ? "locked" : "disconnected");
       return;
     }
+    if (connection.accounts.some((account) => !isMainnetNoirAccount(account))) {
+      clear("wrong_network");
+      return;
+    }
     const selectedId = connection.accounts.some((account) => account.id === preferredId)
       ? preferredId!
       : connection.accounts[0].id;
-    setConnected({ adapter: nextAdapter, accounts: connection.accounts, selectedId, balance: null });
+    setConnected({ adapter: nextAdapter, accounts: connection.accounts, selectedId, balance: null, activity: { status: "loading", entries: null } });
     setState("connected");
+    // The SDK methods below are both documented read operations. Neither opens a
+    // payment proposal, requests a signature, nor broadcasts a transaction.
+    void nextAdapter.getTransactionHistory().then(
+      (entries) => setConnected((current) => current?.adapter === nextAdapter ? { ...current, activity: { status: "ready", entries } } : current),
+      (error) => setConnected((current) => current?.adapter === nextAdapter ? { ...current, activity: { status: noirWalletErrorState(error) === "failed" ? "failed" : "unavailable", entries: null } } : current),
+    );
     try {
       const balance = await nextAdapter.getBalance(selectedId);
       const selected = balance.accounts.find((account) => account.id === selectedId);
@@ -56,7 +70,7 @@ export function NoirWalletCard() {
   }, [clear]);
 
   useEffect(() => {
-    if (mode.kind === "mock") return;
+    if (!walletObservationAllowed) return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
 
@@ -84,7 +98,7 @@ export function NoirWalletCard() {
       unsubscribe?.();
       adapter.current = null;
     };
-  }, [clear, load, mode.kind]);
+  }, [clear, load, walletObservationAllowed]);
 
   const connect = async () => {
     const provider = adapter.current ? null : await waitForNoirWallet();
@@ -126,16 +140,17 @@ export function NoirWalletCard() {
     }
   };
 
-  if (mode.kind === "mock") return null;
+  if (!walletObservationAllowed) return null;
   const selectedBalance = connected?.balance?.accounts.find((account) => account.id === connected.selectedId)?.balance ?? connected?.balance ?? null;
   const isSynced = connected?.balance?.accounts.find((account) => account.id === connected.selectedId)?.synced;
 
   return (
     <Card title={<span className="flex items-center gap-2"><Wallet size={15} aria-hidden /> Noir Wallet</span>} testId="noir-wallet-card"
-      action={<Badge tone={state === "connected" ? "success" : state === "syncing" || state === "checking" || state === "connecting" ? "progress" : "neutral"}>{state === "connected" ? "Connected" : state === "syncing" ? "Syncing" : "Read-only"}</Badge>}>
+      action={<div className="flex items-center gap-2 text-xs text-zinc-500"><Badge tone={state === "connected" ? "success" : state === "syncing" || state === "checking" || state === "connecting" ? "progress" : "neutral"}>{state === "connected" ? "Connected" : state === "syncing" ? "Syncing" : "Read-only"}</Badge><span>Can view, cannot spend.</span></div>}>
       {state === "unavailable" && <Notice tone="neutral" title="Noir Wallet was not detected on this page">Confirm that the official extension is enabled and allowed to access this site, then reload. VeilPay will not request access automatically.</Notice>}
       {state === "disconnected" && <p className="text-sm text-zinc-400">Connect an account to view Noir Wallet-reported balances. VeilPay cannot spend, sign, or broadcast from this screen.</p>}
       {state === "locked" && <p className="text-sm text-amber-200">Noir Wallet is locked. Unlock it in the extension, then reconnect.</p>}
+      {state === "wrong_network" && <Notice tone="neutral" title="This is not a Noir Wallet mainnet connection">VeilPay only observes Zcash mainnet. Install and unlock Noir Wallet&apos;s mainnet extension, then reconnect. No wallet data was retained.</Notice>}
       {state === "rejected" && <p className="text-sm text-zinc-400">Connection was declined. No account information was retained.</p>}
       {state === "failed" && <p className="text-sm text-rose-200">Noir Wallet could not provide account information. Nothing was saved or sent to VeilPay.</p>}
       {(state === "checking" || state === "connecting") && <p className="flex items-center gap-2 text-sm text-zinc-400"><RefreshCw size={14} className="animate-spin" aria-hidden /> Checking existing authorization without opening the wallet…</p>}
@@ -146,12 +161,23 @@ export function NoirWalletCard() {
               {connected.accounts.map((account) => <option key={account.id} value={account.id}>{accountName(account)}</option>)}
             </select>
           </label>}
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3" data-testid="noir-balances">
+          <dl className="grid grid-cols-2 gap-3 text-sm xl:grid-cols-4" data-testid="noir-balances">
+            <div><dt className="text-xs text-zinc-500">Transparent</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100" data-testid="noir-transparent-balance">{amount(selectedBalance?.transparent)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Shielded</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.shielded)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Available</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.available ?? selectedBalance?.spendable)}</dd></div>
             <div><dt className="text-xs text-zinc-500">Total</dt><dd className="mt-1 font-medium tabular-nums text-zinc-100">{amount(selectedBalance?.total)}</dd></div>
           </dl>
+          <dl className="grid gap-3 border-t border-zinc-800 pt-3 text-sm" data-testid="noir-addresses">
+            <div><dt className="text-xs text-zinc-500">Transparent address</dt><dd className="mt-1 break-all font-mono text-xs text-zinc-200">{connected.accounts.find((account) => account.id === connected.selectedId)?.addresses.transparent ?? "Not reported"}</dd></div>
+            <div><dt className="text-xs text-zinc-500">Shielded address</dt><dd className="mt-1 break-all font-mono text-xs text-zinc-200">{connected.accounts.find((account) => account.id === connected.selectedId)?.addresses.shielded ?? "Not reported"}</dd></div>
+          </dl>
           <p className="text-xs text-zinc-500" data-testid="noir-balance-source">Source: Noir Wallet-reported balance for the selected authorized account. {state === "syncing" || isSynced === false ? "Wallet sync is incomplete; do not rely on these amounts." : "Wallet reports this account as synced."} This is not a VeilPay budget or a settlement record.</p>
+          <div className="border-t border-zinc-800 pt-4" data-testid="noir-activity">
+            {connected.activity.status === "loading" && <p className="mt-2 text-sm text-zinc-400">Loading wallet-reported activity…</p>}
+            {connected.activity.status === "unavailable" && <p className="mt-2 text-sm text-zinc-400">Transaction activity is unavailable from this wallet version.</p>}
+            {connected.activity.status === "failed" && <p className="mt-2 text-sm text-rose-200">Wallet activity could not be read. No activity is being inferred.</p>}
+            {connected.activity.status === "ready" && <NoirWalletActivity entries={connected.activity.entries} />}
+          </div>
         </div>
       )}
       <div className="mt-4 flex flex-wrap gap-2">

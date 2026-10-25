@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Wallet UX against the real Axum backend, with /api/health stubbed to a mainnet read-only
- * server and a FAKE window.noirwallet injected by this test harness only. App code never
- * fabricates wallet data. Screenshots go to WALLET_UX_SHOTS when set.
+ * Wallet setup UX against an isolated testnet health fixture and the loopback
+ * Axum backend. The fake window.noirwallet exists only in this harness; the
+ * production mainnet path never fabricates wallet data. Screenshots go to
+ * WALLET_UX_SHOTS when set.
  */
-const mainnetHealth = {
-  status: "ok", network: "mainnet", wallet: "ready", walletBackend: "zingo", chainHeight: null,
+const testnetHealth = {
+  status: "ok", network: "testnet", wallet: "ready", walletBackend: "zingo", chainHeight: null,
   confirmationsRequired: 3, mode: "real", reconciler: { lastRunAt: null, unresolved: 0 },
   chainWatcher: { supported: false, lastBlockAt: null, watchDepth: 100, deepReorgAlert: false },
 };
@@ -15,7 +16,9 @@ type FakeOpts = { network?: "mainnet" | "testnet"; reject?: boolean; unsynced?: 
 
 async function installNoir(page: Page, opts: FakeOpts = {}) {
   await page.addInitScript((o: FakeOpts) => {
-    const test = o.network === "testnet";
+    // This suite exercises the separate testnet setup workflow. Mainnet
+    // observation is covered by noir-wallet.spec.ts.
+    const test = o.network !== "mainnet";
     const c = o.canary ? "Zq9Canary" : "";
     const accounts = [
       { id: "wallet-a:0", label: o.canary ? "Zq9CanaryTreasuryLabel" : "Treasury", walletId: "wallet-a", accountId: "0",
@@ -73,7 +76,7 @@ async function noSideScroll(page: Page) {
 }
 
 async function open(page: Page) {
-  await page.route("**/api/health", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(mainnetHealth) }));
+  await page.route("**/api/health", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(testnetHealth) }));
   await page.goto("/app/wallet");
   await expect(page.getByTestId("wallet-ux-panel")).toBeVisible();
 }
@@ -141,10 +144,10 @@ test("unsynced balance shows Unavailable, never 0", async ({ page }, info) => {
 });
 
 test("wrong network fails closed", async ({ page }, info) => {
-  await installNoir(page, { network: "testnet" });
+  await installNoir(page, { network: "mainnet" });
   await open(page);
   await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-state-wrong_network")).toContainText("wallet is on testnet");
+  await expect(page.getByTestId("wallet-state-wrong_network")).toContainText("wallet is on mainnet");
   await expect(page.getByTestId("wallet-account-picker")).toHaveCount(0);
   await noSideScroll(page);
   await shot(page, "10-wrong-network", info);
