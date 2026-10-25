@@ -162,6 +162,39 @@ extension then answers "User rejected the request", so CI needs a headed
 browser (for example `xvfb-run`). 7-day/30-day charts, totals and recent
 transactions are untested until that code is pushed.
 
+### How to run it
+
+1. Download the official Noir Wallet extension (Chrome Web Store id
+   `mfoghjbpfanobmnoemoepenjjcmfpmdn`, verified with v1.0.39) and unpack the CRX.
+2. Start the backend with `NETWORK=mainnet` (broadcast stays disabled) and the
+   frontend on `http://localhost:3100`. Use `localhost`, never `127.0.0.1`: the
+   extension does not inject `window.noirwallet` there.
+3. Run headed:
+
+   ```sh
+   NOIR_EXT_PATH=/path/to/unpacked NOIR_APP_URL=http://localhost:3100 \
+     xvfb-run -a npx playwright test tests/browser/noir-extension-real.spec.ts \
+     --project=chromium-desktop
+   ```
+
+| Variable | Meaning |
+|---|---|
+| `NOIR_EXT_PATH` | Unpacked extension directory. Unset = the whole spec is skipped. |
+| `NOIR_APP_URL` | App URL. Defaults to `http://localhost:${VEILPAY_DEMO_FRONTEND_PORT:-3101}`. |
+| `NOIR_EXPECT_ADDRESSES=1` | Also run the address-render test (expected to fail until the Stage 2A overview is pushed). |
+
+Wallet rule: the spec creates a new, never-funded wallet in a temporary profile
+for each run. Never point it at a real or funded wallet, never log or screenshot
+the recovery phrase or password, and delete the profile afterwards (the spec does).
+
+### Status (2026-10-25, `09db9c9` + this branch)
+
+- Spec: 3 pass (localhost injection, popup + connect with 0 ZEC and no address
+  in storage, disconnect/revoke incl. reload), 1 skipped (address render, opt-in).
+- Unit tests: vitest 236 pass / 11 skipped. `tsc`: no errors in `src`.
+- Pending on their pushed SHA: re-run with `NOIR_EXPECT_ADDRESSES=1` (check 4),
+  then 7-day/30-day charts, totals and recent transactions.
+
 ## Mainnet restrictions
 
 Mainnet payment execution is not a demo capability. The OpenAPI contract limits
