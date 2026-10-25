@@ -91,7 +91,17 @@ test("spending chart: simulated completed spend, blocked attempt shown separatel
   await expect(card.getByTestId("spending-total")).toHaveText("0.05 ZEC");
   await expect(card.getByRole("img", { name: /in the last 30 days/ })).toBeVisible();
   expect(await card.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  // The page itself must not grow sideways either (list any element that pokes past the viewport).
+  const wide = await page.evaluate(() => {
+    const w = document.documentElement.clientWidth;
+    const out = [...document.querySelectorAll("body *")].filter((el) => el.getBoundingClientRect().right > w + 1)
+      .slice(0, 8).map((el) => `${el.tagName}.${String(el.className).slice(0, 60)} r=${Math.round(el.getBoundingClientRect().right)}`);
+    return { sw: document.documentElement.scrollWidth, w, out };
+  });
+  expect(wide.sw, JSON.stringify(wide.out)).toBeLessThanOrEqual(wide.w + 1);
   await card.screenshot({ path: testInfo.outputPath("chart-populated-30d.png") });
+  // Full-page shot only: pin the mobile bottom nav in flow so it is not painted over content.
+  await page.addStyleTag({ content: 'nav.fixed[aria-label="Main"]{position:static!important}' });
   await page.screenshot({ path: testInfo.outputPath("overview-with-chart.png"), fullPage: true });
 });
 

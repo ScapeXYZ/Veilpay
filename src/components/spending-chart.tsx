@@ -94,7 +94,7 @@ export function SpendingChartView({ payments, isLoading, error, simulated, trunc
         <div aria-hidden className={clsx("mt-1.5 grid text-center", range === 7 ? "gap-2 sm:gap-3" : "gap-px sm:gap-1")}
           style={{ gridTemplateColumns: `repeat(${series.days.length}, minmax(0, 1fr))` }}>
           {series.days.map((d, i) => (
-            <div key={d.key} className="flex flex-col items-center gap-1">
+            <div key={d.key} className="flex flex-col items-center gap-1.5">
               <span className="h-3.5 text-[10px] font-medium text-rose-300" data-testid={`spending-blocked-${d.key}`}>{d.blockedCount ? `${d.blockedCount}✕` : ""}</span>
               <span className="whitespace-nowrap text-[10px] text-zinc-500">{showLabel(i) ? d.label : ""}</span>
             </div>
@@ -104,7 +104,9 @@ export function SpendingChartView({ payments, isLoading, error, simulated, trunc
           <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-accent-400" aria-hidden />{simulated ? "Simulated completed payments (ZEC)" : "Completed payments (ZEC)"}</span>
           <span className="flex items-center gap-1.5"><span className="font-medium text-rose-300" aria-hidden>✕</span>Blocked by a spending rule, excluded from totals</span>
         </p>
-        <table className="sr-only" data-testid="spending-table">
+        {/* sr-only goes on a wrapper: a <table> ignores width:1px and would widen the page on mobile. */}
+        <div className="sr-only">
+        <table data-testid="spending-table">
           <caption>{summary}</caption>
           <thead><tr><th scope="col">Day</th><th scope="col">{simulated ? "Simulated spend" : "Spent"}</th><th scope="col">{word} payments</th><th scope="col">Blocked attempts</th></tr></thead>
           <tbody>
@@ -113,6 +115,7 @@ export function SpendingChartView({ payments, isLoading, error, simulated, trunc
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     );
   }
