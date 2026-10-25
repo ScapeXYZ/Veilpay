@@ -46,13 +46,13 @@ test("live regtest/mock presents the redesigned application shell as a simulatio
     return;
   }
 
-  await page.getByRole("link", { name: "Spending rules" }).click();
+  await primary.getByRole("link", { name: "Spending rules" }).click();
   await expect(page.getByRole("heading", { name: "Spending rules" })).toBeVisible();
-  await page.getByRole("link", { name: "Payments" }).click();
+  await primary.getByRole("link", { name: "Payments" }).click();
   await expect(page.getByRole("heading", { name: "Payments" })).toBeVisible();
-  await page.getByRole("link", { name: "Merchant" }).click();
+  await primary.getByRole("link", { name: "Merchant", exact: true }).click();
   await expect(page.getByRole("heading", { name: /merchant/i })).toBeVisible();
-  await page.getByRole("link", { name: "Help & demo" }).click();
+  await primary.getByRole("link", { name: "Help & demo" }).click();
   await expect(page.getByRole("heading", { name: /help/i })).toBeVisible();
 });
 
@@ -171,7 +171,7 @@ test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and s
   await lookup.getByRole("button", { name: "Check" }).click();
   await expect(page.getByTestId("verification-method")).toContainText(/mock.*simulated, no chain read.*not evidence/i);
   await page.getByTestId("ack").click();
-  await expect(page.getByTestId("acknowledged")).toContainText(/not independent blockchain settlement/i);
+  await expect(page.getByTestId("acknowledged")).toContainText(/not proof that any funds arrived/i);
 
   await page.goto("/app/activity");
   await expect(page.getByTestId("activity-table")).toContainText("DEMO-BLOCKED-0.20");
