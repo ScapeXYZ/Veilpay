@@ -13,6 +13,7 @@ import { inputCls } from "@/lib/styles";
 import { fmtTime } from "@/lib/present";
 import { formatZec, parseZecInput, pctZat } from "@/lib/zat";
 import { Term } from "@/components/term";
+import { PolicySheet } from "@/components/sealed/policy-sheet";
 
 function Section({ icon, title, help, children }: { icon: ReactNode; title: string; help: ReactNode; children: ReactNode }) {
   return (
@@ -167,7 +168,12 @@ function PolicyForm() {
   const { data: a } = useAgent(agentId);
   if (!a) return null;
   // re-mount the editor when the backend version changes, so it always starts from the latest policy
-  return <PolicyEditor key={a.policy.version} agent={a} />;
+  return (
+    <>
+      <PolicySheet agent={a} />
+      <PolicyEditor key={a.policy.version} agent={a} />
+    </>
+  );
 }
 
 export default function PolicyPage() {
