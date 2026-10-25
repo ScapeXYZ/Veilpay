@@ -11,7 +11,7 @@ Use a disposable database outside the repository:
 ```bash
 NETWORK=regtest WALLET_BACKEND=mock \
 DATABASE_URL=sqlite:///tmp/veilpay-demo-readiness.db \
-FRONTEND_ORIGIN=http://127.0.0.1:3100 BIND_ADDR=127.0.0.1:4000 \
+FRONTEND_ORIGIN=http://localhost:3100 BIND_ADDR=127.0.0.1:4000 \
 cargo run --locked --manifest-path backend/Cargo.toml
 ```
 
@@ -22,7 +22,10 @@ NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:4000/api \
 npm run dev
 ```
 
-Open `http://127.0.0.1:3100`. Confirm the health badge/API reports `regtest`,
+Open `http://localhost:3100` (not `127.0.0.1`: the Noir Wallet extension's
+content scripts only match `https://*/*` and `http://localhost/*`, so on
+`127.0.0.1` it never injects `window.noirwallet` and the app shows "wallet not
+found"). Confirm the health badge/API reports `regtest`,
 `mock`, and `walletBackend: mock` before presenting. Remove the disposable
 database afterwards if desired:
 
