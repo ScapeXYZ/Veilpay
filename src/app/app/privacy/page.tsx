@@ -11,6 +11,7 @@ import type { Payment } from "@/lib/contract/schemas";
 import { isSimulatedPayment, paymentStatusLabel, privacyEvidence } from "@/lib/present";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { Term } from "@/components/term";
+import { SealedOpenSheet } from "@/components/sealed/sealed-open-sheet";
 
 const LENSES = [
   { id: "public", label: "Anyone online", icon: Globe },
@@ -75,6 +76,7 @@ export default function PrivacyPage() {
   return (
     <>
       <PageHeader title="Privacy" subtitle="Who is meant to see what about a payment. VeilPay is designed for shielded Zcash, where amounts, sender, receiver and notes are not public. This page explains the design; it does not verify it on a real network." />
+      <SealedOpenSheet />
       {!sel ? (
         <Notice tone="neutral" title="No payment to show yet">
           Open this page in the owner view, or make a payment first.

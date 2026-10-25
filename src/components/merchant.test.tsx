@@ -11,14 +11,16 @@ import { RouteAnnouncements } from "./route-announcements";
 vi.mock("next/navigation", () => ({ usePathname: () => "/merchant" }));
 
 describe("Readable merchant errors", () => {
-  it("uses consistent title case for Paid and Paid late invoice badges", async () => {
+  it("practice invoice badges say Simulated paid / Simulated paid late, never a bare Paid", async () => {
     const api = new MockApiClient({ latencyMs: 0 });
     await api.createDemoSession("merchant");
     render(<Providers client={api}><MerchantPage /></Providers>);
     const invoices = await screen.findByTestId("invoices");
-    expect(invoices).toHaveTextContent("Paid");
-    expect(invoices).toHaveTextContent("Paid late");
-    expect(invoices).not.toHaveTextContent("paid late");
+    expect(invoices).toHaveTextContent("Simulated paid");
+    expect(invoices).toHaveTextContent("Simulated paid late");
+    const badges = Array.from(invoices.querySelectorAll('[data-testid^="invoice-badge-"]')).map((b) => b.textContent ?? "");
+    expect(badges.length).toBeGreaterThan(0);
+    for (const b of badges.filter((t) => /paid/i.test(t))) expect(b).toMatch(/^Simulated paid( late)?$/);
   });
 
   it("shows exactly one friendly alert only after an invalid lookup", async () => {
