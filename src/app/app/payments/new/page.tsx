@@ -114,12 +114,14 @@ function NewPayment() {
 }
 
 export default function NewPaymentPage() {
+  const mode = useNetworkMode();
+  const content = <NewPayment />;
   return (
     <>
       <PageHeader title="New payment request" subtitle="Check a payment against your rules before anything moves. Nothing counts as paid until the VeilPay server reports enough network confirmations; in practice mode they are simulated." />
-      <RequireContext ctx="customer">
-        <NewPayment />
-      </RequireContext>
+      {/* Mainnet intentionally has no customer session. Render its read-only guard
+          directly once the real health query identifies that network. */}
+      {mode.kind === "mainnet_readonly" ? content : <RequireContext ctx="customer">{content}</RequireContext>}
     </>
   );
 }

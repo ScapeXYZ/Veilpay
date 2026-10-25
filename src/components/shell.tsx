@@ -123,8 +123,9 @@ function StatusStrip() {
   );
 }
 
-function MoreSheet({ onClose }: { onClose: () => void }) {
+function MoreSheet({ onClose, mainnet }: { onClose: () => void; mainnet: boolean }) {
   const path = usePathname();
+  const destinations = mainnet ? [...MORE, { href: "/", label: "Home", icon: Home }] : [NAV[4], ...MORE, { href: "/demo", label: "Guided demo", icon: PlayCircle }, { href: "/", label: "Home", icon: Home }];
   return (
     <div className="fixed inset-0 z-[70] lg:hidden" role="dialog" aria-modal="true" aria-label="More navigation">
       <button className="absolute inset-0 bg-black/60" aria-label="Close menu" onClick={onClose} />
@@ -134,7 +135,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800"><X size={16} /></button>
         </div>
         <nav className="grid grid-cols-2 gap-2" aria-label="More">
-          {[NAV[4], ...MORE, { href: "/demo", label: "Guided demo", icon: PlayCircle }, { href: "/", label: "Home", icon: Home }].map(({ href, label, icon: Icon }) => (
+          {destinations.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href} onClick={onClose} aria-current={isActive(path, href) ? "page" : undefined}
               className={clsx("flex items-center gap-2 rounded-xl px-3 py-3 text-sm", isActive(path, href) ? "bg-accent-950 text-accent-200 ring-1 ring-accent-900" : "bg-zinc-950 text-zinc-300 ring-1 ring-zinc-800")}>
               <Icon size={16} aria-hidden /> {label}
@@ -167,8 +168,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function ShellFrame({ children }: { children: ReactNode }) {
   const path = usePathname();
+  const mode = useNetworkMode();
   const [more, setMore] = useState(false);
   const tour = useOnboarding();
+  const mainnet = mode.kind === "mainnet_readonly";
+  const navigation = mainnet ? NAV.slice(0, 4) : NAV;
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-accent-400 focus:p-3 focus:text-zinc-950">Skip to main content</a>
@@ -178,7 +182,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         <aside className="hidden lg:sticky lg:top-8 lg:flex lg:h-[calc(100vh-2rem)] lg:w-56 lg:shrink-0 lg:flex-col lg:border-r lg:border-zinc-900 lg:px-3 lg:py-5">
           <div className="px-2"><Logo /></div>
           <nav className="mt-7 flex flex-col gap-0.5" aria-label="Main">
-            {NAV.map(({ href, label, icon: Icon }) => (
+            {navigation.map(({ href, label, icon: Icon }) => (
               <RailLink key={href} href={href} active={isActive(path, href)}><Icon size={16} aria-hidden /> {label}</RailLink>
             ))}
           </nav>
@@ -189,7 +193,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="mt-auto flex flex-col gap-3 px-2">
-            <p className="text-[11px] leading-relaxed text-zinc-500">Owner and merchant views are separate demo sessions, not real sign-in.</p>
+            {!mainnet && <p className="text-[11px] leading-relaxed text-zinc-500">Owner and merchant views are separate demo sessions, not real sign-in.</p>}
           </div>
         </aside>
         <div className="min-w-0 flex-1">
@@ -197,7 +201,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
               <div className="lg:hidden"><Logo compact /></div>
               <div className="hidden lg:block"><StatusStrip /></div>
-              <ContextSwitch />
+              {!mainnet && <ContextSwitch />}
             </div>
             <div className="border-t border-zinc-900 px-4 py-1.5 lg:hidden"><StatusStrip /></div>
           </header>
@@ -208,17 +212,17 @@ function ShellFrame({ children }: { children: ReactNode }) {
         </div>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-zinc-800 bg-zinc-950/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Main">
-        {NAV.slice(0, 4).map(({ href, short, icon: Icon }) => (
+        {navigation.slice(0, 4).map(({ href, short, icon: Icon }) => (
           <Link key={href} href={href} aria-current={isActive(path, href) ? "page" : undefined}
             className={clsx("flex flex-col items-center gap-0.5 py-2 text-[11px]", isActive(path, href) ? "text-accent-300" : "text-zinc-400")}>
             <Icon size={18} aria-hidden /> {short}
           </Link>
         ))}
-        <button onClick={() => setMore(true)} className={clsx("flex flex-col items-center gap-0.5 py-2 text-[11px]", [NAV[4], ...MORE].some((n) => isActive(path, n.href)) ? "text-accent-300" : "text-zinc-400")} aria-haspopup="dialog" data-testid="nav-more">
+        <button onClick={() => setMore(true)} className={clsx("flex flex-col items-center gap-0.5 py-2 text-[11px]", (mainnet ? MORE : [NAV[4], ...MORE]).some((n) => isActive(path, n.href)) ? "text-accent-300" : "text-zinc-400")} aria-haspopup="dialog" data-testid="nav-more">
           <MoreHorizontal size={18} aria-hidden /> More
         </button>
       </nav>
-      {more && <MoreSheet onClose={() => setMore(false)} />}
+      {more && <MoreSheet onClose={() => setMore(false)} mainnet={mainnet} />}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
 import { InvoiceRequest } from "@/components/invoice-request";
 import { VerificationCard } from "@/components/verification-card";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function CreateInvoice() {
   const mode = useNetworkMode();
@@ -167,13 +168,14 @@ function Lookup() {
 }
 
 export default function MerchantPage() {
+  const mode = useNetworkMode();
   return (
     <>
       <PageHeader
         title="Merchant portal"
         subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys. In practice mode receipts and confirmations are simulated."
       />
-      <RequireContext ctx="merchant">
+      {mode.kind === "mainnet_readonly" ? <MainnetReadOnlyNotice area="Merchant tools" /> : <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What a receipt check tells you">
           Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows (simulated in practice mode). In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
         </Notice>
@@ -184,7 +186,7 @@ export default function MerchantPage() {
             <Invoices />
           </div>
         </div>
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }

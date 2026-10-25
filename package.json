@@ -4,8 +4,9 @@
   "private": true,
   "description": "VeilPay frontend (Zecathon 2026, Shielded Payments). Built against OpenAPI v1.1.",
   "scripts": {
-    "dev": "next dev -H 127.0.0.1 -p 3100",
-    "dev:mainnet-readonly": "NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:4000/api next dev -H 127.0.0.1 -p 3100",
+    "dev": "NEXT_PUBLIC_API_MODE=live VEILPAY_BACKEND_URL=http://127.0.0.1:4000/api next dev -H 127.0.0.1 -p 3100",
+    "dev:mainnet-readonly": "npm run dev",
+    "dev:backend": "NETWORK=mainnet WALLET_BACKEND=zingo FRONTEND_ORIGIN=http://localhost:3100 BIND_ADDR=127.0.0.1:4000 DATABASE_URL=sqlite://veilpay-mainnet.db cargo run --locked --manifest-path backend/Cargo.toml",
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1 -p 3100",
     "lint": "eslint .",
@@ -15,6 +16,7 @@
     "test:browser": "playwright test",
     "test:browser:isolated": "node scripts/run-demo-walkthrough.mjs --full",
     "demo:walkthrough": "node scripts/run-demo-walkthrough.mjs",
+    "demo:capture": "node scripts/run-demo-capture.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
@@ -29,10 +31,10 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
-    "@playwright/test": "1.64.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.0",

@@ -34,10 +34,11 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> std::result::Result<Self, String> {
         let c = Self {
-            database_url: std::env::var("DATABASE_URL").unwrap_or("sqlite://veilpay.db".into()),
+            // Never reuse the historical demo database for a mainnet process.
+            database_url: std::env::var("DATABASE_URL").unwrap_or("sqlite://veilpay-mainnet.db".into()),
             frontend_origin: std::env::var("FRONTEND_ORIGIN")
-                .unwrap_or("http://localhost:3000".into()),
-            network: std::env::var("NETWORK").unwrap_or("testnet".into()),
+                .unwrap_or("http://localhost:3100".into()),
+            network: std::env::var("NETWORK").unwrap_or("mainnet".into()),
         };
         if !["testnet", "regtest", "mainnet"].contains(&c.network.as_str()) {
             return Err("Invalid NETWORK".into());

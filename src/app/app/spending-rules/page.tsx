@@ -13,6 +13,7 @@ import { inputCls } from "@/lib/styles";
 import { fmtTime } from "@/lib/present";
 import { formatZec, parseZecInput, pctZat } from "@/lib/zat";
 import { Term } from "@/components/term";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function Section({ icon, title, help, children }: { icon: ReactNode; title: string; help: ReactNode; children: ReactNode }) {
   return (
@@ -171,12 +172,13 @@ function PolicyForm() {
 }
 
 export default function PolicyPage() {
+  const mode = useNetworkMode();
   return (
     <>
       <PageHeader title="Spending rules" subtitle="The limits your agent must stay within. VeilPay checks every payment against them, and again right before sending." />
-      <RequireContext ctx="customer">
+      {mode.kind === "mainnet_readonly" ? <MainnetReadOnlyNotice area="Spending rules" /> : <RequireContext ctx="customer">
         <PolicyForm />
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }

@@ -1,18 +1,20 @@
 # VeilPay backend
 
-Rust Axum and SQLite. Default mock mode preserves the existing demo invoices,
-policy engine, simulated execution, and mock verification. Mainnet execution is
-disabled. An acknowledgment is a merchant statement, never a cryptographic
-settlement proof.
+Rust Axum and SQLite. The submission default is Zcash **mainnet observation
+only**: the browser connects to Noir Wallet directly for wallet-reported
+addresses, balances, and local activity. VeilPay never signs, broadcasts,
+creates invoices, or presents simulated payment data in this mode. Mainnet
+execution is disabled. An acknowledgment is a merchant statement, never a
+cryptographic settlement proof.
 
 ```bash
-NETWORK=testnet WALLET_BACKEND=mock DATABASE_URL=sqlite://veilpay.db FRONTEND_ORIGIN=http://localhost:3000 cargo run --locked --manifest-path backend/Cargo.toml
+NETWORK=mainnet WALLET_BACKEND=zingo DATABASE_URL=sqlite://veilpay-mainnet.db FRONTEND_ORIGIN=http://localhost:3100 cargo run --locked --manifest-path backend/Cargo.toml
 ```
 
-Demo sessions share `customer_demo` and `mer_demo`; they provide role isolation,
-not production identity. Writes require Origin and session-bound CSRF. POSTs also
-require an 8–128 byte idempotency key, except session bootstrap. Cookies are
-Secure, HttpOnly, and SameSite=Strict. No frontend files are changed.
+Demo sessions are isolated test fixtures, not production identity, and are not
+created on mainnet. Writes require Origin and session-bound CSRF. POSTs also
+require an 8–128 byte idempotency key, except test-only session bootstrap.
+Cookies are Secure, HttpOnly, and SameSite=Strict.
 
 ## Milestone 3
 

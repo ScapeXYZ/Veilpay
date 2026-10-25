@@ -11,6 +11,7 @@ import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useHealth, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 const VIEWS: { id: string; label: string; match: (p: Payment) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
@@ -112,12 +113,13 @@ function ActivityTable() {
 }
 
 export default function ActivityPage() {
+  const mode = useNetworkMode();
   return (
     <>
       <PageHeader title="Activity" subtitle="Everything that happened to your agent's payments, newest first." />
-      <RequireContext ctx="customer">
+      {mode.kind === "mainnet_readonly" ? <MainnetReadOnlyNotice area="Activity" /> : <RequireContext ctx="customer">
         <ActivityTable />
-      </RequireContext>
+      </RequireContext>}
     </>
   );
 }
