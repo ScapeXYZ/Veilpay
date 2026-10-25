@@ -87,7 +87,8 @@ describe("wallet UX panel", () => {
     render(<Harness />);
     expect(await screen.findByTestId("wallet-balance-shielded")).toHaveTextContent("Unavailable");
     expect(screen.getByTestId("wallet-balance-total")).toHaveTextContent("Unavailable");
-    expect(screen.getByTestId("wallet-balance-note")).toHaveTextContent(/not finished syncing/);
+    expect(screen.getByTestId("wallet-syncing")).toHaveTextContent(/not finished syncing/);
+    expect(screen.getByTestId("wallet-status-badge")).toHaveTextContent("Connected · Syncing");
   });
 
   it("declined connection keeps nothing", async () => {

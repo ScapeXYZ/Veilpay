@@ -11,17 +11,19 @@ const mainnetHealth = {
   chainWatcher: { supported: false, lastBlockAt: null, watchDepth: 100, deepReorgAlert: false },
 };
 
-type FakeOpts = { network?: "mainnet" | "testnet"; reject?: boolean; unsynced?: boolean };
+type FakeOpts = { network?: "mainnet" | "testnet"; reject?: boolean; unsynced?: boolean; syncError?: boolean; canary?: boolean };
 
 async function installNoir(page: Page, opts: FakeOpts = {}) {
   await page.addInitScript((o: FakeOpts) => {
     const test = o.network === "testnet";
+    const c = o.canary ? "Zq9Canary" : "";
     const accounts = [
-      { id: "wallet-a:0", label: "Treasury", walletId: "wallet-a", accountId: "0",
+      { id: "wallet-a:0", label: o.canary ? "Zq9CanaryTreasuryLabel" : "Treasury", walletId: "wallet-a", accountId: "0",
         addresses: { transparent: test ? "tmTreasuryTransparent000000000000" : "t1TreasuryTransparent000000000000", shielded: test ? "utest1treasuryshieldedunifiedaddress0000000000" : "u1treasuryshieldedunifiedaddress00000000000000" } },
-      { id: "wallet-b:0", label: "Operations", walletId: "wallet-b", accountId: "0",
+      { id: "wallet-b:0", label: o.canary ? "Zq9CanaryOpsLabel" : "Operations", walletId: "wallet-b", accountId: "0",
         addresses: { transparent: test ? "tmOperationsTransparent0000000000" : "t1OperationsTransparent0000000000", shielded: test ? "utest1operationsshieldedunifiedaddress00000000" : "u1operationsshieldedunifiedaddress000000000000" } },
     ];
+    if (c) for (const a of accounts) { a.addresses.shielded = a.addresses.shielded.replace(/0{8}$/, "zq9canry"); a.addresses.transparent = a.addresses.transparent.replace(/0{8}$/, "Zq9Canry"); }
     let authorized = false;
     const listeners: Array<(a: unknown) => void> = [];
     const calls: string[] = [];
@@ -40,6 +42,9 @@ async function installNoir(page: Page, opts: FakeOpts = {}) {
           }
           if (method === "zcash_getBalance") {
             void params;
+            if (o.syncError) throw new Error("Wallet is still syncing");
+            if (o.canary) return { transparent: "0", shielded: "0", accounts: accounts.map((a, i) => ({ id: a.id, walletId: a.walletId, accountId: a.accountId,
+              synced: true, balance: { transparent: i === 0 ? "3.1417" : "4.2718", shielded: i === 0 ? "7.7731" : "8.8842", available: i === 0 ? "6.6620" : "5.5519", total: i === 0 ? "9.9953" : "13.1560" } })) };
             return { transparent: "0", shielded: "0", accounts: accounts.map((a, i) => ({ id: a.id, walletId: a.walletId, accountId: a.accountId,
               synced: !(o.unsynced && i === 0), balance: { transparent: "0", shielded: i === 0 ? "2.50" : "1.25", available: i === 0 ? "2.00" : "1.00", total: i === 0 ? "2.60" : "1.30" } })) };
           }
@@ -161,4 +166,109 @@ test("no extension: not installed on desktop, desktop-only on phones", async ({ 
   await expect(page.getByTestId("wallet-connect")).toHaveCount(0);
   await noSideScroll(page);
   await shot(page, "12-no-extension", info);
+});
+
+test("syncing: wallet still scanning shows Syncing + Unavailable, never 0", async ({ page }, info) => {
+  await installNoir(page, { syncError: true });
+  await open(page);
+  await page.getByTestId("wallet-connect").click();
+  await expect(page.getByTestId("wallet-status-badge")).toHaveText("Connected · Syncing");
+  await expect(page.getByTestId("wallet-syncing")).toContainText("not finished syncing");
+  for (const k of ["shielded", "available", "total"]) await expect(page.getByTestId(`wallet-balance-${k}`)).toHaveText("Unavailable");
+  await expect(page.getByTestId("wallet-balance")).not.toContainText(/\b0(\.0+)? ZEC/);
+  await noSideScroll(page);
+  await shot(page, "13-syncing", info);
+});
+
+test("account switching in the wallet drops balances and asks to pick again", async ({ page }, info) => {
+  await installNoir(page);
+  await open(page);
+  await page.getByTestId("wallet-connect").click();
+  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("2.50 ZEC");
+  await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit(["wallet-b:0"]));
+  await expect(page.getByTestId("wallet-state-account_changed")).toBeVisible();
+  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
+  await expect(page.getByTestId("wallet-account-picker")).toContainText("Pick an account again");
+  await noSideScroll(page);
+  await shot(page, "14-account-switched", info);
+  await page.getByTestId("wallet-account-wallet-b:0").getByRole("radio").check();
+  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("1.25 ZEC");
+});
+
+test("disconnected by the wallet clears everything", async ({ page }, info) => {
+  await installNoir(page);
+  await open(page);
+  await page.getByTestId("wallet-connect").click();
+  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("2.50 ZEC");
+  await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit(null));
+  await expect(page.getByTestId("wallet-state-disconnected")).toBeVisible();
+  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
+  await expect(page.getByTestId("wallet-account-picker")).toHaveCount(0);
+  await shot(page, "15-disconnected-by-wallet", info);
+});
+
+test("leak audit: no wallet data in console, network, storage or cookies", async ({ page, context }, info) => {
+  const console_: string[] = [];
+  const net: string[] = [];
+  page.on("console", (m) => console_.push(`${m.type()} ${m.text()}`));
+  page.on("pageerror", (e) => console_.push(`pageerror ${e.message}`));
+  page.on("request", (r) => net.push(`${r.method()} ${r.url()}\n${JSON.stringify(r.headers())}\n${r.postData() ?? ""}`));
+  await installNoir(page, { canary: true });
+  await open(page);
+  await page.getByTestId("wallet-connect").click();
+  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("7.7731 ZEC");
+  await page.getByTestId("wallet-account-wallet-b:0").getByRole("radio").check();
+  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("8.8842 ZEC");
+  await page.getByTestId(`copy-wallet-b:0`).click().catch(() => undefined);
+  const ob = page.getByTestId("business-onboarding");
+  await ob.getByTestId("business-name").fill("Leak Audit Cafe");
+  await ob.getByLabel("Services").check();
+  await ob.getByTestId("onboarding-next").click();
+  await ob.getByTestId("payout-wallet-b:0").check();
+  await ob.getByTestId("onboarding-next").click();
+  await ob.getByTestId("onboarding-save").click();
+  await expect(ob.getByTestId("saved-summary")).toHaveText("Leak Audit Cafe · Services");
+  await page.reload();
+  await expect(page.getByTestId("wallet-ux-panel")).toBeVisible();
+  await page.waitForTimeout(500);
+
+  const storage = await page.evaluate(async () => {
+    const dump = (s: Storage) => Object.fromEntries(Array.from({ length: s.length }, (_, i) => [s.key(i)!, s.getItem(s.key(i)!)]));
+    const idb: Record<string, unknown> = {};
+    const dbs = (await indexedDB.databases?.()) ?? [];
+    for (const d of dbs) {
+      if (!d.name) continue;
+      idb[d.name] = await new Promise((resolve) => {
+        const req = indexedDB.open(d.name!);
+        req.onerror = () => resolve("open-failed");
+        req.onsuccess = async () => {
+          const db = req.result; const out: Record<string, unknown> = {};
+          for (const name of Array.from(db.objectStoreNames)) {
+            out[name] = await new Promise((r) => { const g = db.transaction(name).objectStore(name).getAll(); g.onsuccess = () => r(g.result); g.onerror = () => r("read-failed"); });
+          }
+          db.close(); resolve(out);
+        };
+      });
+    }
+    return { local: dump(localStorage), session: dump(sessionStorage), idb, cookie: document.cookie };
+  });
+  const cookies = await context.cookies();
+  const haystacks: Record<string, string> = {
+    console: console_.join("\n"), network: net.join("\n"),
+    localStorage: JSON.stringify(storage.local), sessionStorage: JSON.stringify(storage.session),
+    indexedDB: JSON.stringify(storage.idb), cookies: JSON.stringify(cookies) + storage.cookie,
+  };
+  const canaries = ["Zq9Canary", "zq9canry", "Zq9Canry", "wallet-a:0", "wallet-b:0", "wallet-a", "wallet-b",
+    "7.7731", "8.8842", "3.1417", "4.2718", "6.6620", "5.5519", "9.9953", "13.1560", "u1treasury", "u1operations", "t1Treasury", "t1Operations"];
+  const hits: string[] = [];
+  for (const [where, text] of Object.entries(haystacks)) for (const k of canaries) if (text.includes(k)) hits.push(`${k} in ${where}`);
+  const report = { viewport: info.project.name, consoleLines: console_.length, requests: net.length,
+    localKeys: Object.keys(storage.local), sessionKeys: Object.keys(storage.session), idbDatabases: Object.keys(storage.idb), cookies: cookies.map((c) => c.name), hits };
+  if (process.env.WALLET_UX_LEAK_REPORT) {
+    const fs = await import("node:fs");
+    fs.appendFileSync(process.env.WALLET_UX_LEAK_REPORT, JSON.stringify(report) + "\n");
+  }
+  expect(hits).toEqual([]);
+  expect(net.length).toBeGreaterThan(0);
+  expect(JSON.parse(storage.local["veilpay.businessDraft.v1"] ?? "{}")).toMatchObject({ businessName: "Leak Audit Cafe", registered: false });
 });

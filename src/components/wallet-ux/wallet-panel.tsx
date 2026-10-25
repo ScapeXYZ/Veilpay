@@ -106,7 +106,8 @@ export function AccountPicker({ wallet }: { wallet: NoirWalletUx }) {
 export function WalletPanel({ wallet }: { wallet: NoirWalletUx }) {
   const { status, balance, balanceLoading, detectedNetwork, expected } = wallet;
   const copy = walletStatusCopy(status, detectedNetwork, expected);
-  const badge = BADGE[status];
+  const syncing = status === "connected" && !balanceLoading && balance !== null && balance.synced !== true;
+  const badge = syncing ? { label: "Connected · Syncing", tone: "progress" as const } : BADGE[status];
   const showConnect = status === "disconnected" || status === "rejected" || status === "locked" || status === "connecting" || status === "wrong_network";
   const synced = balance?.synced === true;
 
@@ -130,7 +131,7 @@ export function WalletPanel({ wallet }: { wallet: NoirWalletUx }) {
                   <BalanceRow label="Available" value={balance?.values.available} synced={synced} testId="wallet-balance-available" />
                   <BalanceRow label="Total" value={balance?.values.total} synced={synced} testId="wallet-balance-total" />
                 </dl>
-                <p className="mt-2 text-xs text-zinc-500" data-testid="wallet-balance-note">
+                <p className="mt-2 text-xs text-zinc-500" data-testid={syncing ? "wallet-syncing" : "wallet-balance-note"}>
                   {synced
                     ? "Reported by Noir Wallet for this account, which it says is synced. Not a VeilPay budget and not a settlement record."
                     : "Noir Wallet has not finished syncing this account, so amounts are shown as Unavailable rather than 0."}
