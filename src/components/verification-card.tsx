@@ -9,7 +9,7 @@ import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useAcknowledge, useVerification } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Acknowledgment } from "@/lib/contract/schemas";
-import { VERIFICATION_COPY, ackEligibility, fmtTime } from "@/lib/present";
+import { ackEligibility, ackStatement, confirmationsText, fmtTime, isSimulatedVerification, verificationCopy } from "@/lib/present";
 
 /** Merchant receipt evidence for one payment: expected vs observed, confirmations, method, gated acknowledgment. */
 export function VerificationCard({ paymentId }: { paymentId: string }) {
@@ -20,7 +20,8 @@ export function VerificationCard({ paymentId }: { paymentId: string }) {
   const [done, setDone] = useState<Acknowledgment | null>(null);
   if (isLoading) return <Skeleton className="h-40" />;
   if (error || !v) return <ErrorBox>{errorText(error)}</ErrorBox>;
-  const copy = VERIFICATION_COPY[v.state];
+  const copy = verificationCopy(v);
+  const sim = isSimulatedVerification(v);
   const elig = ackEligibility(v);
   return (
     <Card
@@ -42,14 +43,12 @@ export function VerificationCard({ paymentId }: { paymentId: string }) {
           <dd>{v.expectedZat ? <Zec zat={v.expectedZat} /> : "Not set"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-zinc-500">Received</dt>
+          <dt className="text-xs text-zinc-500">{sim ? "Simulated receipt" : "Reported received"}</dt>
           <dd data-testid="received">{v.receivedZat ? <Zec zat={v.receivedZat} /> : "Nothing yet"}</dd>
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Confirmations</dt>
-          <dd className="tabular-nums">
-            {v.confirmations} of {v.confirmationsRequired}
-          </dd>
+          <dd className="tabular-nums" data-testid="verification-confirmations">{confirmationsText(v.confirmations, v.confirmationsRequired, sim)}</dd>
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Checked</dt>
@@ -77,7 +76,7 @@ export function VerificationCard({ paymentId }: { paymentId: string }) {
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {done ? (
           <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="acknowledged">
-            <BadgeCheck size={16} aria-hidden /> Marked as received {fmtTime(done.at)}. This is the merchant&apos;s own statement.
+            <BadgeCheck size={16} aria-hidden /> Marked as received {fmtTime(done.at)}. {ackStatement(sim)}
             {done.invalidatedAt && (
               <span className="text-amber-300" data-testid="ack-statement-invalidated"> Invalidated {fmtTime(done.invalidatedAt)}{done.invalidationReason ? `: ${done.invalidationReason}` : ""}.</span>
             )}

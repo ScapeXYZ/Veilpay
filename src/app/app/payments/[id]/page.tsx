@@ -32,7 +32,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
       <Link href="/app/payments" className="inline-flex items-center gap-1 self-start text-sm text-zinc-400 hover:text-zinc-100">
         <ArrowLeft size={14} aria-hidden /> Payments
       </Link>
-      <PageHeader title="Payment" subtitle="Everything that happened to this payment, in order. It shows paid only once the network confirms it." />
+      <PageHeader title="Payment" subtitle="Everything that happened to this payment, in order. It shows paid only once the VeilPay server reports enough network confirmations; in practice mode they are simulated." />
       <RequireContext ctx="customer">
         <Detail id={id} />
       </RequireContext>

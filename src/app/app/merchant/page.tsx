@@ -95,11 +95,11 @@ function Invoices() {
           <tbody>
             {items.map((i) => (
               <tr key={i.id} className="border-b border-zinc-800/70 last:border-0">
-                <td className="py-2 pr-2">
+                <td className="py-2 pr-2 [overflow-wrap:anywhere]">
                   <div className="text-zinc-200">{i.reference}</div>
                   <div className="font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
-                <td className="py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
+                <td className="whitespace-nowrap py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
                 <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "paid late" : i.status}</Badge></td>
               </tr>
             ))}
@@ -127,12 +127,24 @@ function Lookup() {
   return (
     <div className="flex flex-col gap-4">
       <Card title="Verify a payment" testId="lookup">
-        <div className="flex gap-2">
-          <input aria-label="Payment ID to verify" className={`${inputCls} min-w-0 font-mono`} placeholder="payment id" value={input} onChange={(e) => setInput(e.target.value)} spellCheck={false} />
-          <Button variant="secondary" onClick={() => input.trim() && setActive(input.trim())}>
+        <ol className="mb-3 space-y-1 text-xs text-zinc-400" data-testid="verify-steps">
+          <li><span className="font-semibold text-zinc-300">1.</span> On the customer&apos;s payment page, find <b className="text-zinc-200">Payment ID</b> under Payment details and press <b className="text-zinc-200">Copy</b>.</li>
+          <li><span className="font-semibold text-zinc-300">2.</span> Paste it below and press <b className="text-zinc-200">Check</b> (or Enter).</li>
+          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt. In practice mode a match means the simulated payment matches the invoice, not that funds arrived.</li>
+        </ol>
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const id = input.trim();
+            if (id) setActive(id);
+          }}
+        >
+          <input id="verify-payment-id" aria-label="Payment ID to verify" data-testid="verify-input" className={`${inputCls} min-w-0 font-mono`} placeholder="Paste a Payment ID" value={input} onChange={(e) => setInput(e.target.value)} spellCheck={false} autoComplete="off" />
+          <Button type="submit" variant="secondary" data-testid="verify-check">
             <Search size={14} aria-hidden /> Check
           </Button>
-        </div>
+        </form>
         {ids.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {ids.map((id) => (
@@ -159,11 +171,11 @@ export default function MerchantPage() {
     <>
       <PageHeader
         title="Merchant portal"
-        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys; shielded payment amounts and parties are not public."
+        subtitle="Juniper Coffee creates invoices and checks they were paid. The customer shares no keys. In practice mode receipts and confirmations are simulated."
       />
       <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What a receipt check tells you">
-          Whether this invoice received the right amount and how many network confirmations it has. In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
+          Whether VeilPay&apos;s receipt scan reports the invoice amount, and how many confirmations it shows (simulated in practice mode). In this demo the VeilPay operator holds the merchant&apos;s viewing key for them. Marking a receipt as received is the merchant&apos;s own statement, not proof from the network.
         </Notice>
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Lookup />

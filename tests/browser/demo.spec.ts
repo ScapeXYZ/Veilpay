@@ -99,10 +99,10 @@ test("actual Axum mock flow enforces the allowance, simulates one permitted paym
   await lookup.getByLabel("Payment ID to verify").fill(paymentId);
   await lookup.getByRole("button", { name: "Check" }).click();
   await expect(page.getByTestId("verification")).toContainText(/method: mock.*simulated, no chain read/i);
-  await expect(page.getByTestId("verification-state")).toContainText("Received");
+  await expect(page.getByTestId("verification-state")).toContainText("Simulated match");
   await page.getByTestId("ack").click();
   await expect(page.getByTestId("acknowledged")).toContainText(/marked as received/i);
-  await expect(page.getByTestId("acknowledged")).toContainText(/merchant's own statement/i);
+  await expect(page.getByTestId("acknowledged")).toContainText(/practice statement by the merchant, not proof that any funds arrived/i);
 });
 
 test("actual Axum rejects an over-cap request and leaves it visibly unpaid", async ({ page }) => {

@@ -12,6 +12,8 @@ import { MockBanner, SourceTag } from "./source";
 import { Badge, Button, ErrorBox, Skeleton } from "./ui";
 import { RouteAnnouncements } from "./route-announcements";
 import { Term } from "./term";
+import { OnboardingProvider } from "./onboarding";
+import { useOnboarding } from "@/lib/onboarding";
 
 export function HealthStrip() {
   const { data: h } = useHealth();
@@ -156,8 +158,17 @@ function RailLink({ href, active, small, children }: { href: string; active: boo
 
 /** Operational shell for /app/*: 224px rail on desktop, top bar + bottom nav with More on mobile. */
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <OnboardingProvider>
+      <ShellFrame>{children}</ShellFrame>
+    </OnboardingProvider>
+  );
+}
+
+function ShellFrame({ children }: { children: ReactNode }) {
   const path = usePathname();
   const [more, setMore] = useState(false);
+  const tour = useOnboarding();
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-accent-400 focus:p-3 focus:text-zinc-950">Skip to main content</a>
@@ -190,7 +201,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="border-t border-zinc-900 px-4 py-1.5 lg:hidden"><StatusStrip /></div>
           </header>
-          <main id="main-content" tabIndex={-1} className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-28 pt-6 lg:px-8 lg:pb-12">
+          <main id="main-content" tabIndex={-1} className={clsx("mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-6 lg:px-8", tour.open ? "pb-[22rem] lg:pb-72" : "pb-28 lg:pb-12")}>
             <HealthStrip />
             {children}
           </main>
