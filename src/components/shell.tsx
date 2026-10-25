@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, LifeBuoy, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Shield, ShieldCheck, Store, X } from "lucide-react";
+import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, LifeBuoy, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Shield, ShieldCheck, Store, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -86,6 +86,7 @@ const NAV = [
 const MORE = [
   { href: "/app/activity", label: "Activity", icon: Activity },
   { href: "/app/privacy", label: "Privacy", icon: Eye },
+  { href: "/app/wallet", label: "Wallet", icon: Wallet },
 ] as const;
 
 function isActive(path: string, href: string) {
