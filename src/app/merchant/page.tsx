@@ -5,10 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag } from "@/components/source";
-import { useDataSource } from "@/lib/api/data-source";
+import { useDataSource, useNetworkMode } from "@/lib/api/data-source";
 import { Badge, Button, Card, ErrorBox, Field, Notice, Skeleton, Zec } from "@/components/ui";
 import { inputCls } from "@/lib/styles";
 import { isMockClient } from "@/lib/api";
+import { invoiceBadgeText } from "@/lib/sealed/invoice-badge";
 import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Acknowledgment } from "@/lib/contract/schemas";
@@ -154,6 +155,8 @@ function CreateInvoice() {
 
 function Invoices() {
   const { data, isLoading, error } = useInvoices();
+  const api = useApi();
+  const simulated = useNetworkMode().kind === "mock" || isMockClient(api);
   if (isLoading) return <Skeleton className="h-40" />;
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
   const items = data?.items ?? [];
@@ -171,7 +174,7 @@ function Invoices() {
                   <div className="break-all font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
                 <td className="py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
-                <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "Paid late" : i.status === "paid" ? "Paid" : i.status}</Badge></td>
+                <td className="py-2 text-right"><Badge tone={tone[i.status]}><span data-testid={`invoice-badge-${i.id}`}>{invoiceBadgeText(i.status, simulated)}</span></Badge></td>
               </tr>
             ))}
           </tbody>

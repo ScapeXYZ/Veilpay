@@ -1,7 +1,8 @@
 "use client";
 
 import { PageHeader } from "@/components/shell";
-import { Notice } from "@/components/ui";
+import { Card, Notice } from "@/components/ui";
+import { ADDRESS_FACT, AddressChip } from "@/components/sealed/address-chip";
 import { BusinessOnboarding } from "@/components/wallet-ux/business-onboarding";
 import { WalletPanel } from "@/components/wallet-ux/wallet-panel";
 import { useNetworkMode } from "@/lib/api/data-source";
@@ -22,6 +23,52 @@ function WalletOff({ kind }: { kind: string }) {
   );
 }
 
+const STEPS = ["Connect Noir Wallet", "Choose an account", "Business setup", "Saved as a local draft"] as const;
+
+/** Wallet-first journey, shown as a quiet ruled list. Presentation only: the steps are not tracked. */
+function JourneySteps() {
+  return (
+    <ol data-testid="wallet-journey" aria-label="Wallet setup steps" className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-line py-3 text-xs text-zinc-400 sm:grid-cols-4">
+      {STEPS.map((s, i) => (
+        <li key={s} className="flex min-w-0 items-baseline gap-2">
+          <span className="font-mono text-zinc-500">{String(i + 1).padStart(2, "0")}</span>
+          <span className="truncate">{s}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** What VeilPay reads and what it never sees, in the same sealed/open language as the chips. */
+function ReadsSheet() {
+  return (
+    <Card testId="wallet-reads-sheet" title={<span className="font-display text-lg">What this page reads</span>}>
+      <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+        <div>
+          <div className="text-xs font-medium text-zinc-400">Reads, only after you click Connect</div>
+          <ul className="mt-2 flex flex-col gap-1.5 text-zinc-300">
+            <li>Account names you share from Noir Wallet</li>
+            <li>Their shielded and transparent addresses</li>
+            <li>Balances as the wallet reports them, or &ldquo;Unavailable&rdquo;</li>
+          </ul>
+        </div>
+        <div>
+          <div className="text-xs font-medium text-zinc-400">Never sees or does</div>
+          <ul className="mt-2 flex flex-col gap-1.5 text-zinc-300">
+            <li>Your keys or seed phrase</li>
+            <li>Transaction memos or history</li>
+            <li>Signing or sending. This build can&apos;t send from your wallet.</li>
+          </ul>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3 text-xs text-zinc-400">
+        <span className="flex flex-wrap items-center gap-2"><AddressChip kind="shielded" testId="reads-chip-shielded" /> {ADDRESS_FACT.shielded}</span>
+        <span className="flex flex-wrap items-center gap-2"><AddressChip kind="transparent" testId="reads-chip-transparent" /> {ADDRESS_FACT.transparent}</span>
+      </div>
+    </Card>
+  );
+}
+
 export default function WalletPage() {
   const mode = useNetworkMode();
   const expected = expectedWalletNetwork(mode.kind);
@@ -29,6 +76,7 @@ export default function WalletPage() {
   return (
     <>
       <PageHeader title="Wallet" subtitle="Connect Noir Wallet read-only and set up your business. VeilPay never signs, sends or registers anything here." />
+      <JourneySteps />
       {expected ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <WalletPanel wallet={wallet} />
@@ -37,6 +85,7 @@ export default function WalletPage() {
       ) : (
         <WalletOff kind={mode.kind} />
       )}
+      <ReadsSheet />
     </>
   );
 }
