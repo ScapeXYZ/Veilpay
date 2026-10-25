@@ -56,7 +56,7 @@ try {
     // loopback backend with an IP rate limit. Give each stateful spec its own Axum
     // process and SQLite file, then repeat for each viewport project.
     for (const project of ["chromium-desktop", "chromium-mobile"]) {
-      for (const testFile of ["tests/browser/corrections.spec.ts", "tests/browser/demo.spec.ts", "tests/browser/onboarding.spec.ts"]) {
+      for (const testFile of ["tests/browser/corrections.spec.ts", "tests/browser/demo.spec.ts", "tests/browser/onboarding.spec.ts", "tests/browser/spending-chart.spec.ts"]) {
         const status = await runProject(project, undefined, testFile);
         if (status !== 0) {
           process.exitCode = status;
