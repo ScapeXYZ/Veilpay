@@ -134,11 +134,30 @@ export function SpendingChartView({ payments, isLoading, error, simulated, trunc
 }
 
 /** Overview card wired to the existing payments query (no new endpoint). */
+/**
+ * Connected / live modes: no chart at all. The backend does not yet report independently
+ * verified, non-mock confirmed payments, and VeilPay never infers settlement from a status
+ * badge or invents a verification field, so the honest state is "not shown yet".
+ */
+export function LiveChartWithheld() {
+  return (
+    <Card testId="spending-activity" title={<span className="flex items-center gap-2"><BarChart3 size={14} aria-hidden className="text-zinc-400" />Agent spending activity</span>}>
+      <div data-testid="spending-live-withheld" className="flex flex-col gap-1.5">
+        <p className="font-display text-lg text-zinc-100">No live spending chart yet</p>
+        <p className="text-sm text-zinc-400">
+          The chart appears once the VeilPay backend reports payments it has independently verified as confirmed. Until then nothing is drawn, and nothing is worked out from status labels on this page.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 export function SpendingChart({ agentId }: { agentId?: string | null }) {
   const { data, isLoading, error, refetch } = usePayments();
   const m = useNetworkMode();
   const items = data?.items;
   const simulated = m.kind === "mock" || !!items?.some((p) => p.mockRef);
+  if (!simulated) return <LiveChartWithheld />;
   return (
     <SpendingChartView payments={items} isLoading={isLoading} error={error} simulated={simulated}
       truncated={!!data?.nextCursor} agentId={agentId} onRetry={() => void refetch()} />

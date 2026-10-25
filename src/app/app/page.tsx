@@ -7,7 +7,7 @@ import { PaymentBadge } from "@/components/payment";
 import { AgentSummary } from "@/components/agent-summary";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag } from "@/components/source";
-import { SpendingChart } from "@/components/spending-chart";
+import { LiveChartWithheld, SpendingChart } from "@/components/spending-chart";
 import { Badge, Card, ErrorBox, Meter, Notice, Skeleton, Zec } from "@/components/ui";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useAgent, useHealth, usePayments, useSelectedAgent } from "@/lib/api/hooks";
@@ -98,7 +98,7 @@ function Dashboard() {
           hint="Not shown. The wallet is shared, so its balance is not this agent's money.">
           <span className="text-zinc-400" data-testid="wallet-unavailable">Unavailable</span>
         </Metric>
-        <Metric label="Left to spend" testId="metric-remaining" hint={<>of a <Zec zat={total} /> total budget</>}>
+        <Metric label="Left to spend" testId="metric-remaining" hint={<>budget remaining under VeilPay rules, of a <Zec zat={total} /> total</>}>
           <Zec zat={u.remainingZat} testId="remaining" />
         </Metric>
         <Metric label={<Term k="reserved">Set aside</Term>} testId="metric-reserved" hint={`${u.pendingCount} approved, not sent yet`}>
@@ -180,6 +180,7 @@ function MainnetReadOnlyWallet() {
       <Notice tone="neutral" title="VeilPay server observer unavailable">
         This local backend has no real mainnet observer adapter. Wallet balances above come directly from Noir Wallet; VeilPay is not showing backend activity, confirmations, or transaction history.
       </Notice>
+      <LiveChartWithheld />
     </>
   );
 }
