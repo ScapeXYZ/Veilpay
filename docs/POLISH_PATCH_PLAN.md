@@ -2,7 +2,9 @@
 
 Source: Temi's approval, 2026-10-25. Existing layout, structure and navigation stay.
 No redesign, no landing page, no mock/demo display, no fake financial data, no
-memo content. Measurements are from a DOM audit at 1440px and 390px widths on
+memo content. **Desktop only** (Temi, 2026-10-25 update): mobile UI, responsive
+layouts, mobile header wrapping and mobile tap-target fixes are out of scope for
+now; items 1 and 4 are dropped and item 2 covers desktop text only. Measurements are from a DOM audit at 1440px and 390px widths on
 `/app`, `/app/activity` and `/app/merchant` (mainnet, wallet disconnected).
 
 **Not edited yet.** Codex has uncommitted changes in `src/components/shell.tsx`,
@@ -13,15 +15,15 @@ mainnet work is pushed and ownership is agreed. Items in other files are
 
 | # | Approved item | File(s) | Status |
 |---|---|---|---|
-| 1 | Mobile header wrapping | `shell.tsx` | BLOCKED |
-| 2 | Very small text to 12px | `shell.tsx`, `app/app/page.tsx` | BLOCKED |
+| 1 | ~~Mobile header wrapping~~ | `shell.tsx` | DROPPED (desktop only) |
+| 2 | Very small text to 12px (desktop) | `shell.tsx`, `app/app/page.tsx` | BLOCKED |
 | 3 | Noir read-only badge alignment | `noir-wallet-card.tsx` (`ui.tsx` only if the fix belongs in `Badge`) | BLOCKED |
-| 4 | Three undersized tap targets | `shell.tsx` | BLOCKED |
+| 4 | ~~Three undersized tap targets~~ | `shell.tsx` | DROPPED (desktop only) |
 | 5 | Clear "Can view, cannot spend" explanation | `noir-wallet-card.tsx` | BLOCKED |
 | 6 | Empty-state wording, no fake data | `app/app/activity/page.tsx`, `app/app/payments/page.tsx` READY; `app/app/page.tsx` BLOCKED | split |
 | 7 | Remove outdated simulation language from live mainnet | `app/app/merchant/page.tsx`, `app/app/help/page.tsx`, `app/page.tsx` READY; `onboarding.tsx`, `shell.tsx` BLOCKED | split |
 
-## 1. Mobile header wrapping (`src/components/shell.tsx`, `StatusStrip`, ~L114-121)
+## 1. Mobile header wrapping (DROPPED, kept for later) (`src/components/shell.tsx`, `StatusStrip`, ~L114-121)
 
 At 390px the strip (`flex flex-wrap gap-x-3 gap-y-1`) puts "· wallet sending off"
 and "read-only" on a second row.
@@ -39,7 +41,7 @@ and "read-only" on a second row.
 - `shell.tsx` L59 "View as" label.
 - `shell.tsx` L185 "More" heading (keep uppercase + tracking).
 - `shell.tsx` L192 "Owner and merchant views are separate demo sessions…" note (wording also covered in item 7).
-- `shell.tsx` L213 and L217 bottom-nav labels (Overview, Rules, Payments, Merchant, More). Check the 5 labels still fit at 360px; if not, use `tracking-tight`.
+- ~~`shell.tsx` L213 and L217 mobile bottom-nav labels~~ (mobile, dropped).
 - `app/app/page.tsx` L61 block-number footnote.
 
 ## 3. Noir read-only badge alignment (`src/components/noir-wallet-card.tsx`, L135)
@@ -49,7 +51,7 @@ card title, unlike the other cards' badges. Fix in the card first: wrap the
 `action` badge in `self-center` (or match the other cards' action wrapper). Only
 touch `Badge` in `ui.tsx` if every badge is affected, which the audit did not show.
 
-## 4. Three undersized tap targets (`src/components/shell.tsx`)
+## 4. Three undersized tap targets (DROPPED, kept for later) (`src/components/shell.tsx`)
 
 Under 40px tall in the audit:
 
@@ -101,4 +103,4 @@ Out of scope (mock/demo only, unchanged): `app/demo/page.tsx`, `app/app/payments
 
 1. No merge or rebase until they say; agree file ownership on their pushed SHA first.
 2. Apply READY items first, then BLOCKED items in files they hand over.
-3. Re-run the DOM audit at 1440/390 and the real-extension spec with `NOIR_EXPECT_ADDRESSES=1`.
+3. Re-run the DOM audit at 1440 and the real-extension spec with `NOIR_EXPECT_ADDRESSES=1`.
