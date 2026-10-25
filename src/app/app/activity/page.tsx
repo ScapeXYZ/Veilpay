@@ -7,6 +7,7 @@ import { Fragment, useMemo, useState } from "react";
 import { PaymentBadge, Timeline } from "@/components/payment";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { Button, Card, ErrorBox, Notice, Skeleton, Zec } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useHealth, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
@@ -39,6 +40,7 @@ function Alerts({ items }: { items: Payment[] }) {
 }
 
 function ActivityTable() {
+  const simLabels = useNetworkMode().kind === "mock";
   const { data, isLoading, error, refetch, isFetching } = usePayments();
   const [view, setView] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
@@ -58,7 +60,7 @@ function ActivityTable() {
               return (
                 <button key={x.id} aria-pressed={view === x.id} data-testid={`view-${x.id}`} onClick={() => { setView(x.id); setOpen(null); }}
                   className={clsx("rounded-md px-2.5 py-1 text-xs", view === x.id ? "bg-zinc-800 text-zinc-50 ring-1 ring-zinc-700" : "text-zinc-400 hover:bg-zinc-950")}>
-                  {x.label} <span className="tabular-nums text-zinc-500">{n}</span>
+                  {simLabels && x.label === "Paid" ? "Simulated complete" : x.label} <span className="tabular-nums text-zinc-500">{n}</span>
                 </button>
               );
             })}

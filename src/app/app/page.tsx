@@ -29,7 +29,7 @@ function PrimaryAction() {
   const m = useNetworkMode();
   const cls = "inline-flex items-center gap-2 rounded-lg bg-accent-400 px-3.5 py-2 text-sm font-semibold text-zinc-950 hover:bg-accent-300";
   if (m.kind === "mock")
-    return <Link href="/demo" className={cls} data-testid="primary-action"><PlayCircle size={15} aria-hidden /> Watch the 2-minute demo</Link>;
+    return <Link href="/demo" className={cls} data-testid="primary-action"><PlayCircle size={15} aria-hidden /> Try interactive demo</Link>;
   if (m.kind === "mainnet_readonly")
     return <Link href="/app/activity" className={cls} data-testid="primary-action"><Eye size={15} aria-hidden /> View observations</Link>;
   if (!m.canWrite) return null;
