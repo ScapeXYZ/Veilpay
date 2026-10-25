@@ -8,13 +8,14 @@ import { AgentSummary } from "@/components/agent-summary";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { SourceTag } from "@/components/source";
 import { SpendingChart } from "@/components/spending-chart";
-import { Badge, Card, ErrorBox, Meter, Skeleton, Zec } from "@/components/ui";
+import { Badge, Card, ErrorBox, Meter, Notice, Skeleton, Zec } from "@/components/ui";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useAgent, useHealth, usePayments, useSelectedAgent } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
 import { pctZat } from "@/lib/zat";
 import { Term } from "@/components/term";
+import { NoirWalletCard } from "@/components/noir-wallet-card";
 
 function Metric({ label, children, hint, testId, icon }: { label: ReactNode; children: ReactNode; hint?: ReactNode; testId?: string; icon?: ReactNode }) {
   return (
@@ -78,7 +79,7 @@ function Dashboard() {
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
   // A live demo session deliberately starts without an agent. Reuse the existing,
   // backend-authoritative setup flow rather than leaving the overview in a skeleton.
-  if (!agentId) return <AgentSummary />;
+  if (!agentId) return <><NoirWalletCard /><AgentSummary /></>;
   if (isLoading || !a) return <Skeleton className="h-72" />;
   const u = a.usage;
   const total = a.policy.totalBudgetZat;
@@ -89,6 +90,8 @@ function Dashboard() {
   return (
     <>
       <ModeCard />
+
+      <NoirWalletCard />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Wallet balance" icon={<Wallet size={12} aria-hidden />} testId="metric-wallet"
@@ -164,13 +167,34 @@ function Dashboard() {
   );
 }
 
+/**
+ * Mainnet deliberately has no demo session: the wallet extension can be used
+ * read-only without creating a mock customer/merchant session. Keep this
+ * surface independent from the demo dashboard and its simulated data.
+ */
+function MainnetReadOnlyWallet() {
+  return (
+    <>
+      <ModeCard />
+      <NoirWalletCard />
+      <Notice tone="neutral" title="VeilPay server observer unavailable">
+        This local backend has no real mainnet observer adapter. Wallet balances above come directly from Noir Wallet; VeilPay is not showing backend activity, confirmations, or transaction history.
+      </Notice>
+    </>
+  );
+}
+
+function Overview() {
+  const mode = useNetworkMode();
+  if (mode.kind === "mainnet_readonly") return <MainnetReadOnlyWallet />;
+  return <RequireContext ctx="customer"><Dashboard /></RequireContext>;
+}
+
 export default function DashboardPage() {
   return (
     <>
       <PageHeader title="Overview" subtitle="How much your AI agent may spend, what it has paid, and anything that needs you." />
-      <RequireContext ctx="customer">
-        <Dashboard />
-      </RequireContext>
+      <Overview />
     </>
   );
 }

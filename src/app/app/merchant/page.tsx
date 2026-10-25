@@ -100,7 +100,7 @@ function Invoices() {
                   <div className="font-mono text-xs text-zinc-500">{i.id}</div>
                 </td>
                 <td className="whitespace-nowrap py-2 pr-2 text-right"><Zec zat={i.amountZat} /></td>
-                <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "paid late" : i.status}</Badge></td>
+                <td className="py-2 text-right"><Badge tone={tone[i.status]}>{i.status === "paid_late" ? "Paid late" : i.status === "paid" ? "Paid" : i.status}</Badge></td>
               </tr>
             ))}
           </tbody>

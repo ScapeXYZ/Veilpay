@@ -1,0 +1,95 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NoirWalletCard } from "./noir-wallet-card";
+
+const { getNoirWallet } = vi.hoisted(() => ({ getNoirWallet: vi.fn() }));
+vi.mock("@noir-wallet/sdk", () => ({ getNoirWallet }));
+vi.mock("@/lib/api/data-source", () => ({
+  useNetworkMode: () => ({ kind: "mainnet_readonly" }),
+}));
+
+const accounts = [
+  { id: "wallet-a:0", label: "Treasury", walletId: "wallet-a", accountId: "0", addresses: { transparent: "t1a", shielded: "u1a" } },
+  { id: "wallet-b:0", label: "Operations", walletId: "wallet-b", accountId: "0", addresses: { transparent: "t1b", shielded: "u1b" } },
+];
+
+function provider(opts: { authorized?: boolean; reject?: boolean } = {}) {
+  let authorized = opts.authorized ?? false;
+  const listeners = new Set<(accounts?: unknown) => void>();
+  const zcash = {
+    getAccounts: vi.fn(async () => authorized ? { transparent: "t1a", shielded: "u1a", accounts } : null),
+    connect: vi.fn(async () => {
+      if (opts.reject) throw Object.assign(new Error("User rejected"), { code: 4001 });
+      authorized = true;
+      return { transparent: "t1a", shielded: "u1a", accounts };
+    }),
+    getBalance: vi.fn(async (id: string) => ({
+      transparent: "0", shielded: id === accounts[1].id ? "1.25" : "2.50", available: id === accounts[1].id ? "1.00" : "2.00", total: id === accounts[1].id ? "1.30" : "2.60",
+      accounts: accounts.map((account) => ({ id: account.id, walletId: account.walletId, accountId: account.accountId, synced: account.id !== accounts[1].id, balance: { transparent: "0", shielded: account.id === accounts[1].id ? "1.25" : "2.50", available: account.id === accounts[1].id ? "1.00" : "2.00", total: account.id === accounts[1].id ? "1.30" : "2.60" } })),
+    })),
+    disconnect: vi.fn(async () => { authorized = false; }),
+    on: vi.fn((_event: string, listener: (accounts?: unknown) => void) => listeners.add(listener)),
+    removeListener: vi.fn((_event: string, listener: (accounts?: unknown) => void) => listeners.delete(listener)),
+  };
+  return { provider: { isNoirWallet: true, zcash }, zcash, changed: (accounts?: unknown) => { if (Array.isArray(accounts) && accounts.length === 0) authorized = false; listeners.forEach((listener) => listener(accounts)); } };
+}
+
+describe("NoirWalletCard", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("silently checks existing authorization and only requests it after a click", async () => {
+    const fake = provider();
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText(/connect an account/i);
+    expect(fake.zcash.getAccounts).toHaveBeenCalledTimes(1);
+    expect(fake.zcash.connect).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("connect-noir-wallet"));
+    await screen.findByText("2.50 ZEC");
+    expect(fake.zcash.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches only between authorized accounts and labels an unsynced wallet balance", async () => {
+    const fake = provider({ authorized: true });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText("2.50 ZEC");
+    fireEvent.change(screen.getByTestId("noir-account-select"), { target: { value: accounts[1].id } });
+    await screen.findByText("1.25 ZEC");
+    expect(fake.zcash.getBalance).toHaveBeenLastCalledWith(accounts[1].id);
+    expect(screen.getByText(/sync is incomplete/i)).toBeInTheDocument();
+  });
+
+  it("clears stale state on authorization changes and revokes access only after an explicit click", async () => {
+    const fake = provider({ authorized: true });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText("2.50 ZEC");
+    await act(async () => fake.changed());
+    await waitFor(() => expect(fake.zcash.getAccounts).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByTestId("disconnect-noir-wallet"));
+    await screen.findByText(/connect an account/i);
+    expect(fake.zcash.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an empty accountsChanged event as a locked wallet and clears its balance", async () => {
+    const fake = provider({ authorized: true });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText("2.50 ZEC");
+    await act(async () => fake.changed([]));
+    await screen.findByText(/wallet is locked/i);
+    expect(screen.queryByTestId("noir-balances")).toBeNull();
+  });
+
+  it("reports an authorization rejection without retaining an account", async () => {
+    const fake = provider({ reject: true });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByText(/connect an account/i);
+    fireEvent.click(screen.getByTestId("connect-noir-wallet"));
+    await screen.findByText(/connection was declined/i);
+    expect(screen.queryByTestId("noir-balances")).toBeNull();
+  });
+});
