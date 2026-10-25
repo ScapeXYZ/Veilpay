@@ -13,11 +13,13 @@ import type {
   ZcashAccount,
   ZcashBalanceResult,
   ZcashConnectResult,
+  TransactionHistoryEntry,
 } from "@noir-wallet/sdk";
 
 export type NoirConnection = ZcashConnectResult;
 export type NoirAccount = ZcashAccount;
 export type NoirBalance = ZcashBalanceResult;
+export type NoirTransaction = TransactionHistoryEntry;
 export type NoirProvider = NoirWalletProvider;
 
 /**
@@ -82,6 +84,14 @@ export class NoirWalletAdapter {
     return this.provider.zcash.getBalance(accountId);
   }
 
+  /**
+   * Wallet-local activity, obtained through Noir Wallet's documented read API.
+   * It is deliberately not correlated with, posted to, or reconciled by VeilPay.
+   */
+  getTransactionHistory(): Promise<NoirTransaction[]> {
+    return this.provider.zcash.getTransactionHistory();
+  }
+
   disconnect(): Promise<void> {
     return this.provider.zcash.disconnect();
   }
@@ -90,4 +100,15 @@ export class NoirWalletAdapter {
     this.provider.zcash.on("accountsChanged", handler);
     return () => this.provider.zcash.removeListener("accountsChanged", handler);
   }
+}
+
+/**
+ * Noir Wallet ships mainnet and testnet as separate extensions. The SDK has no
+ * network query, so refuse to present a connection as mainnet unless its
+ * returned address pair has mainnet prefixes. This is an intentionally narrow
+ * guard, not a full address validator.
+ */
+export function isMainnetNoirAccount(account: NoirAccount): boolean {
+  const { transparent, shielded } = account.addresses;
+  return /^(t1|t3)/.test(transparent) && /^(u1|zs)/.test(shielded);
 }

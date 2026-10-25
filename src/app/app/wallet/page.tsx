@@ -2,6 +2,7 @@
 
 import { PageHeader } from "@/components/shell";
 import { Card, Notice } from "@/components/ui";
+import { NoirWalletCard } from "@/components/noir-wallet-card";
 import { ADDRESS_FACT, AddressChip } from "@/components/sealed/address-chip";
 import { BusinessOnboarding } from "@/components/wallet-ux/business-onboarding";
 import { WalletPanel } from "@/components/wallet-ux/wallet-panel";
@@ -56,7 +57,7 @@ function ReadsSheet() {
           <div className="text-xs font-medium text-zinc-400">Never sees or does</div>
           <ul className="mt-2 flex flex-col gap-1.5 text-zinc-300">
             <li>Your keys or seed phrase</li>
-            <li>Transaction memos or history</li>
+            <li>Transaction memos; wallet activity is displayed only as Noir Wallet reports it</li>
             <li>Signing or sending. This build can&apos;t send from your wallet.</li>
           </ul>
         </div>
@@ -69,22 +70,26 @@ function ReadsSheet() {
   );
 }
 
+function WalletSetup({ expected }: { expected: NonNullable<ReturnType<typeof expectedWalletNetwork>> }) {
+  const wallet = useNoirWalletUx(expected);
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <WalletPanel wallet={wallet} />
+      <BusinessOnboarding wallet={wallet} />
+    </div>
+  );
+}
+
 export default function WalletPage() {
   const mode = useNetworkMode();
   const expected = expectedWalletNetwork(mode.kind);
-  const wallet = useNoirWalletUx(expected);
+  const observationOnly = mode.kind === "mainnet_readonly" || mode.kind === "unknown";
   return (
     <>
-      <PageHeader title="Wallet" subtitle="Connect Noir Wallet read-only and set up your business. VeilPay never signs, sends or registers anything here." />
-      <JourneySteps />
-      {expected ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <WalletPanel wallet={wallet} />
-          <BusinessOnboarding wallet={wallet} />
-        </div>
-      ) : (
-        <WalletOff kind={mode.kind} />
-      )}
+      <PageHeader title="Wallet" subtitle="Connect Noir Wallet read-only. VeilPay never signs, sends, registers, or stores wallet data here." />
+      {/* Mainnet and unknown-health views use the same read-only observation
+          component as Overview; they never mount the separate setup workflow. */}
+      {observationOnly ? <NoirWalletCard allowWhenBackendUnavailable /> : expected ? <><JourneySteps /><WalletSetup expected={expected} /></> : <WalletOff kind={mode.kind} />}
       <ReadsSheet />
     </>
   );

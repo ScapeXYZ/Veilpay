@@ -11,6 +11,7 @@ import type { Payment } from "@/lib/contract/schemas";
 import { isSimulatedPayment, paymentStatusLabel, privacyEvidence } from "@/lib/present";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { Term } from "@/components/term";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 import { SealedOpenSheet } from "@/components/sealed/sealed-open-sheet";
 
 const LENSES = [
@@ -71,11 +72,13 @@ export default function PrivacyPage() {
   const withLens = (data?.items ?? []).filter((p) => p.privacy);
   const [selId, setSelId] = useState<string | null>(null);
   const [lens, setLens] = useState<LensId>("public");
-  const modeIsMock = useNetworkMode().kind === "mock";
+  const mode = useNetworkMode();
+  const modeIsMock = mode.kind === "mock";
   const sel = withLens.find((p) => p.id === selId) ?? withLens.find((p) => p.pool) ?? withLens[0];
   return (
     <>
       <PageHeader title="Privacy" subtitle="Who is meant to see what about a payment. VeilPay is designed for shielded Zcash, where amounts, sender, receiver and notes are not public. This page explains the design; it does not verify it on a real network." />
+      {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Privacy details" unknown={mode.kind === "unknown"} /> : <>
       <SealedOpenSheet />
       {!sel ? (
         <Notice tone="neutral" title="No payment to show yet">
@@ -112,7 +115,7 @@ export default function PrivacyPage() {
             </p>
           </div>
         </div>
-      )}
+      )}</>}
     </>
   );
 }

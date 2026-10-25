@@ -14,6 +14,7 @@ import { SEED_IDS } from "@/lib/api/fixtures";
 import { useAgent, usePayment, useSession, useSwitchContext } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { Providers } from "../providers";
+import { useNetworkMode } from "@/lib/api/data-source";
 
 const STEPS = [
   "Start",
@@ -203,7 +204,7 @@ function Walkthrough({ onReset }: { onReset: () => void }) {
 }
 
 /** Always its own mock client + query cache: the demo can never read or write a live backend. */
-export default function DemoPage() {
+function DemoSimulation() {
   const [run, setRun] = useState(0);
   const [client, setClient] = useState(() => new MockApiClient());
   return (
@@ -213,4 +214,21 @@ export default function DemoPage() {
       </PublicShell>
     </Providers>
   );
+}
+
+/** The isolated fixture is intentionally unavailable from the mainnet build. */
+export default function DemoPage() {
+  const mode = useNetworkMode();
+  if (mode.kind === "mainnet_readonly") {
+    return (
+      <PublicShell>
+        <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-16 lg:px-8">
+          <h1 className="text-2xl font-semibold text-zinc-50">Interactive demo unavailable</h1>
+          <p className="text-zinc-400">This mainnet-only build does not expose simulated balances, transactions, or confirmations.</p>
+          <Link href="/app" className="text-accent-300 underline">Open the mainnet wallet overview</Link>
+        </div>
+      </PublicShell>
+    );
+  }
+  return <DemoSimulation />;
 }

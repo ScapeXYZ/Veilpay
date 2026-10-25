@@ -22,7 +22,7 @@ export const ONBOARDING_STEPS = [
     href: "/app",
     icon: Sparkles,
     title: "Welcome to VeilPay",
-    body: "VeilPay lets an AI agent pay invoices only within limits you set. This short tour shows where things are. In this build every payment is a simulation, so no real money moves.",
+    body: "VeilPay lets an AI agent pay invoices only within limits you set. This short tour shows where things are. Practice mode uses simulations; the mainnet overview is read-only and shows only data Noir Wallet reports. Neither view enables sending from this app.",
   },
   {
     id: "rules",
@@ -84,7 +84,7 @@ function write(store: "local" | "session", key: UiPrefKey, value: string | null)
 }
 
 
-export function OnboardingProvider({ children }: { children: ReactNode }) {
+export function OnboardingProvider({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
   const path = usePathname();
   const router = useRouter();
   const snap = parse(useSyncExternalStore(subscribe, readRaw, () => SERVER_SNAPSHOT));
@@ -93,7 +93,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<boolean | null>(null);
 
   const autoEligible = snap.ready && !snap.stored && !snap.sessionClosed;
-  const open = active === true || (active === null && autoEligible && path === "/app");
+  // The tour describes the isolated practice workflow. The shell disables it
+  // on confirmed mainnet instead of mixing simulation language into that view.
+  const open = !disabled && (active === true || (active === null && autoEligible && path === "/app"));
 
   const go = useCallback(
     (i: number) => {

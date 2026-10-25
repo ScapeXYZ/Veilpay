@@ -129,6 +129,9 @@ test("actual Axum rejects an over-cap request and leaves it visibly unpaid", asy
 });
 
 test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and simulated-complete payments", async ({ page }) => {
+  // This is a full owner/merchant workflow across several real fixture writes.
+  // Keep its assertion path intact on the smaller mobile viewport.
+  test.setTimeout(60_000);
   // All values here are the narrated demo values. The configured web servers are the
   // real loopback Axum regtest/mock backend and the Next proxy; no route is intercepted.
   const blockedInvoice = await createInvoice(page, "0.20", "DEMO-BLOCKED-0.20");
@@ -182,26 +185,46 @@ test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and s
   await expect(page.getByTestId("activity-table")).toContainText("DEMO-ALLOWED-0.05");
 
   await page.goto("/app");
+  // The mobile tour is intentionally non-modal, but it can cover the overview
+  // action. Dismiss the real tour control before exercising that action.
+  const skipTour = page.getByTestId("onboarding-skip");
+  await skipTour.waitFor({ state: "visible", timeout: 5_000 }).then(() => skipTour.click(), () => undefined);
   await page.getByLabel("Existing agent ID").fill(agentId!);
   await page.getByRole("button", { name: "Select agent" }).click();
   await expect(page.getByTestId("metric-spent")).toContainText("0.05 ZEC");
   await expect(page.getByTestId("metric-remaining")).toContainText("0.95 ZEC");
   await expect(page.getByTestId("mock-banner")).toContainText(/every payment, confirmation and receipt here is pretend/i);
-  expect(await page.evaluate(() => ({ local: Object.keys(localStorage).length, session: Object.keys(sessionStorage).length }))).toEqual({ local: 0, session: 0 });
+  // The optional Tour may keep one session-only UI preference after dismissal.
+  // It must never retain agent, payment, wallet, or other functional data.
+  expect(await page.evaluate(() => ({
+    local: Object.keys(localStorage),
+    session: Object.keys(sessionStorage).filter((key) => key !== "veilpay.onboarding.session"),
+  }))).toEqual({ local: [], session: [] });
 });
 
-test("loading state is shown while the Axum health response is pending", async ({ page }) => {
-  await page.route("**/api/health", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    await route.continue();
+test("health pending keeps the overview fail-closed until the real query resolves", async ({ page }) => {
+  let releaseHealth!: () => void;
+  const healthRequested = new Promise<void>((resolve) => {
+    page.route("**/api/health", async (route) => {
+      resolve();
+      await new Promise<void>((release) => { releaseHealth = release; });
+      await route.continue();
+    });
   });
-  const loading = page.goto("/app");
-  await expect(page.getByRole("status", { name: "Loading" }).first()).toBeVisible();
-  await loading;
+
+  const navigation = page.goto("/app", { waitUntil: "domcontentloaded" });
+  await healthRequested;
+  await expect(page.getByTestId("unknown-banner")).toContainText(/nothing on screen should be treated as real/i);
+  releaseHealth();
+  await navigation;
+  await expect(page.getByTestId("mock-banner")).toBeVisible();
 });
 
 test("mainnet read-only view fails closed", async ({ page }) => {
-  await page.route("**/api/health", (route) => route.fulfill({
+  let healthQueries = 0;
+  await page.route("**/api/health**", (route) => {
+    healthQueries += 1;
+    return route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
       status: "ok", network: "mainnet", wallet: "ready", walletBackend: "zingolib", mode: "real",
@@ -209,8 +232,12 @@ test("mainnet read-only view fails closed", async ({ page }) => {
       reconciler: { lastRunAt: null, unresolved: 0 },
       chainWatcher: { supported: false, lastBlockAt: null, watchDepth: 0, deepReorgAlert: false },
     }),
-  }));
+    });
+  });
+  const health = page.waitForResponse((response) => response.url().includes("/api/health") && response.status() === 200);
   await page.goto("/app/payments/new");
+  await health;
+  expect(healthQueries).toBeGreaterThan(0);
   await expect(page.getByTestId("new-payment-mainnet")).toContainText(/no new payments on mainnet/i);
   await expect(page.getByTestId("new-payment-mainnet")).toContainText(/never requests or sends payments there/i);
 });

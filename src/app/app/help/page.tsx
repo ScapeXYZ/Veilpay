@@ -8,6 +8,8 @@ import { useOnboarding } from "@/lib/onboarding";
 import { PageHeader } from "@/components/shell";
 import { GLOSSARY } from "@/components/term";
 import { Card } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
+import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function Answer({ icon, q, children }: { icon: ReactNode; q: string; children: ReactNode }) {
   return (
@@ -23,6 +25,10 @@ function Answer({ icon, q, children }: { icon: ReactNode; q: string; children: R
 
 export default function HelpPage() {
   const tour = useOnboarding();
+  const mode = useNetworkMode();
+  if (mode.kind === "mainnet_readonly" || mode.kind === "unknown") {
+    return <><PageHeader title={mode.kind === "unknown" ? "Server status unavailable" : "Mainnet safety"} subtitle={mode.kind === "unknown" ? "Wallet observation remains local and read-only. Server-backed features are disabled." : "VeilPay observes mainnet wallet data only. It does not create payment requests, invoices, or transactions."} /><MainnetReadOnlyNotice area="Interactive demos" unknown={mode.kind === "unknown"} /></>;
+  }
   return (
     <>
       <PageHeader title="Help & demo" subtitle="What VeilPay does, in plain words, a tour of the app and a practice run you can replay." />

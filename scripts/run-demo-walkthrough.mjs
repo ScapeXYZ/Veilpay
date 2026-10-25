@@ -23,14 +23,16 @@ function freeLoopbackPort() {
 
 const tmp = await mkdtemp(path.join(os.tmpdir(), "veilpay-demo-"));
 let playwrightPid;
+let fixtureRun = 0;
 try {
   async function runProject(project, grep, testFile) {
     const [frontendPort, backendPort] = await Promise.all([freeLoopbackPort(), freeLoopbackPort()]);
+    const database = path.join(tmp, `${project}-${++fixtureRun}.sqlite`);
     const env = {
       ...process.env,
       VEILPAY_DEMO_FRONTEND_PORT: String(frontendPort),
       VEILPAY_DEMO_BACKEND_PORT: String(backendPort),
-      VEILPAY_DEMO_DATABASE: path.join(tmp, `${project}.sqlite`),
+      VEILPAY_DEMO_DATABASE: database,
     };
     console.log(`Running ${project} against live Axum/Next on loopback ports ${frontendPort}/${backendPort}.`);
     const args = ["playwright", "test", `--project=${project}`, "--workers=1"];
@@ -54,9 +56,25 @@ try {
   if (process.argv.includes("--full")) {
     // Browser contexts have separate cookies but the mock demo protects its shared
     // loopback backend with an IP rate limit. Give each stateful spec its own Axum
-    // process and SQLite file, then repeat for each viewport project.
+    // process and SQLite file, then repeat for each viewport project. The long
+    // walkthrough creates one additional owner session after the other demo cases,
+    // so it also gets its own fixture window.
     for (const project of ["chromium-desktop", "chromium-mobile"]) {
-      for (const testFile of ["tests/browser/corrections.spec.ts", "tests/browser/demo.spec.ts", "tests/browser/onboarding.spec.ts", "tests/browser/spending-chart.spec.ts"]) {
+      for (const testFile of ["tests/browser/corrections.spec.ts", "tests/browser/demo.spec.ts", "tests/browser/onboarding.spec.ts", "tests/browser/spending-chart.spec.ts", "tests/browser/noir-wallet.spec.ts"]) {
+        if (testFile === "tests/browser/demo.spec.ts") {
+          const otherDemoCases = await runProject(project, "^(?!.*deterministic hackathon walkthrough).*$", testFile);
+          if (otherDemoCases !== 0) {
+            process.exitCode = otherDemoCases;
+            break;
+          }
+          const walkthrough = await runProject(project, "deterministic hackathon walkthrough", testFile);
+          if (walkthrough !== 0) {
+            process.exitCode = walkthrough;
+            break;
+          }
+          continue;
+        }
+
         const status = await runProject(project, undefined, testFile);
         if (status !== 0) {
           process.exitCode = status;
