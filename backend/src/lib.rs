@@ -397,7 +397,14 @@ async fn dispatch(
     let path = uri.path().trim_start_matches("/api/");
     let parts: Vec<_> = path.split('/').collect();
     let write = method != Method::GET;
-    let mut tx = app.pool.begin_with("BEGIN IMMEDIATE").await?;
+    // Only state-changing requests need SQLite's writer reservation. Starting
+    // every GET with BEGIN IMMEDIATE made the health poll contend with normal
+    // writes and could turn a read-only probe into a 500 under load.
+    let mut tx = if write {
+        app.pool.begin_with("BEGIN IMMEDIATE").await?
+    } else {
+        app.pool.begin().await?
+    };
     if path == "health" && method == Method::GET {
         let unresolved: i64 = sqlx::query_scalar("SELECT count(*) FROM wallet_operations WHERE network=? AND state IN ('pending','unknown','broadcast','mined')").bind(&app.config.network).fetch_one(&mut *tx).await?;
         let last_run: Option<String> = sqlx::query_scalar(

@@ -7,7 +7,7 @@
  * history methods. Wallet data stays in component memory and is never sent to
  * the VeilPay API or persisted in browser storage.
  */
-import { getNoirWallet } from "@noir-wallet/sdk";
+import { detectProvider, getNoirWallet } from "@noir-wallet/sdk";
 import type {
   NoirWalletProvider,
   ZcashAccount,
@@ -20,10 +20,36 @@ export type NoirAccount = ZcashAccount;
 export type NoirBalance = ZcashBalanceResult;
 export type NoirProvider = NoirWalletProvider;
 
+/**
+ * Noir Wallet injects asynchronously and emits `noirwallet#initialized` when
+ * its page-context provider is ready. Keep the SDK's short default window so a
+ * missing extension never leaves this screen in a perpetual loading state.
+ */
+export const NOIR_PROVIDER_DETECTION_TIMEOUT_MS = 3_000;
+
 export function detectNoirWallet(): NoirProvider | null {
   if (typeof window === "undefined") return null;
   const wallet = getNoirWallet();
   return wallet?.isNoirWallet === true ? wallet : null;
+}
+
+/**
+ * Detect an already-injected provider immediately, otherwise wait once for
+ * Noir Wallet's official initialization signal. This only observes injection;
+ * it neither requests account access nor invokes any wallet action.
+ */
+export async function waitForNoirWallet(
+  timeout = NOIR_PROVIDER_DETECTION_TIMEOUT_MS,
+): Promise<NoirProvider | null> {
+  const existing = detectNoirWallet();
+  if (existing) return existing;
+
+  try {
+    await detectProvider(timeout);
+    return detectNoirWallet();
+  } catch {
+    return null;
+  }
 }
 
 /** Classify provider errors for UI without retaining or displaying raw wallet errors. */

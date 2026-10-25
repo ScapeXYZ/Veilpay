@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
 import { hmrSingleton } from "@/lib/hmr-singleton";
 import type { InvoiceCreate, PaymentRequestCreate, PolicyUpdate, SessionContext } from "@/lib/contract/schemas";
+import { networkModeOf } from "@/lib/mode";
 import { ApiError, newIdempotencyKey, type ApiClient } from "./types";
 
 /** Stable across Fast Refresh; mounted providers and consumers keep one context identity. */
@@ -41,6 +42,14 @@ export function useHealth() {
 
 export function useSession() {
   const api = useApi();
+  const health = useHealth();
+  // The operational shell is shared by the demo and the mainnet read-only
+  // view. Wait for the server-owned network mode before treating a 401 as an
+  // invitation to create a demo session. Mainnet has no session surface at
+  // all, so it must not make either request.
+  const mayUseDemoSession = api.mode === "mock" || (
+    health.isSuccess && networkModeOf(health.data, api.mode).kind !== "mainnet_readonly"
+  );
   return useQuery({
     queryKey: qk.session,
     queryFn: async () => {
@@ -51,6 +60,7 @@ export function useSession() {
         throw e;
       }
     },
+    enabled: mayUseDemoSession,
     staleTime: 60_000,
     retry: false,
   });

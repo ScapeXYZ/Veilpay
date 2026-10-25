@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NoirWalletCard } from "./noir-wallet-card";
 
-const { getNoirWallet } = vi.hoisted(() => ({ getNoirWallet: vi.fn() }));
-vi.mock("@noir-wallet/sdk", () => ({ getNoirWallet }));
+const { detectProvider, getNoirWallet } = vi.hoisted(() => ({ detectProvider: vi.fn(), getNoirWallet: vi.fn() }));
+vi.mock("@noir-wallet/sdk", () => ({ detectProvider, getNoirWallet }));
 vi.mock("@/lib/api/data-source", () => ({
   useNetworkMode: () => ({ kind: "mainnet_readonly" }),
 }));
@@ -35,7 +35,28 @@ function provider(opts: { authorized?: boolean; reject?: boolean } = {}) {
 }
 
 describe("NoirWalletCard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    detectProvider.mockRejectedValue(new Error("Noir Wallet is not installed"));
+  });
+
+  it("waits once for Noir Wallet's official delayed-injection signal before reporting unavailable", async () => {
+    const fake = provider();
+    getNoirWallet.mockReturnValueOnce(null).mockReturnValue(fake.provider);
+    detectProvider.mockResolvedValue({});
+    render(<NoirWalletCard />);
+    await screen.findByText(/connect an account/i);
+    expect(detectProvider).toHaveBeenCalledTimes(1);
+    expect(fake.zcash.getAccounts).toHaveBeenCalledTimes(1);
+    expect(fake.zcash.connect).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable only after the bounded detection attempt fails", async () => {
+    getNoirWallet.mockReturnValue(null);
+    render(<NoirWalletCard />);
+    await screen.findByText(/not detected on this page/i);
+    expect(detectProvider).toHaveBeenCalledTimes(1);
+  });
 
   it("silently checks existing authorization and only requests it after a click", async () => {
     const fake = provider();

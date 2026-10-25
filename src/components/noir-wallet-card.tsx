@@ -2,7 +2,7 @@
 
 import { PlugZap, RefreshCw, ShieldCheck, Unplug, Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NoirWalletAdapter, detectNoirWallet, noirWalletErrorState, type NoirAccount, type NoirBalance } from "@/lib/noir-wallet";
+import { NoirWalletAdapter, noirWalletErrorState, type NoirAccount, type NoirBalance, waitForNoirWallet } from "@/lib/noir-wallet";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { Badge, Button, Card, Notice } from "./ui";
 
@@ -57,32 +57,38 @@ export function NoirWalletCard() {
 
   useEffect(() => {
     if (mode.kind === "mock") return;
-    const provider = detectNoirWallet();
-    if (!provider) {
-      void Promise.resolve().then(() => clear("unavailable"));
-      return;
-    }
-    const nextAdapter = new NoirWalletAdapter(provider);
-    adapter.current = nextAdapter;
-    // Silent restoration only. This does not request access or open the extension.
-    void Promise.resolve().then(() => load(nextAdapter)).catch((error) => clear(noirWalletErrorState(error)));
-    const unsubscribe = nextAdapter.onAccountsChanged((accountState) => {
-      // Never reuse an account or balance after authorization/lock state changes.
-      const locked = Array.isArray(accountState) && accountState.length === 0;
-      clear(locked ? "locked" : "checking");
-      void load(nextAdapter, undefined, locked).catch((error) => clear(noirWalletErrorState(error)));
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+
+    // The extension may inject after React hydrates. The SDK waits for its
+    // official initialization event once, without opening an authorization UI.
+    void waitForNoirWallet().then((provider) => {
+      if (!active) return;
+      if (!provider) {
+        clear("unavailable");
+        return;
+      }
+      const nextAdapter = new NoirWalletAdapter(provider);
+      adapter.current = nextAdapter;
+      // Silent restoration only. This does not request access or open the extension.
+      void load(nextAdapter).catch((error) => clear(noirWalletErrorState(error)));
+      unsubscribe = nextAdapter.onAccountsChanged((accountState) => {
+        // Never reuse an account or balance after authorization/lock state changes.
+        const locked = Array.isArray(accountState) && accountState.length === 0;
+        clear(locked ? "locked" : "checking");
+        void load(nextAdapter, undefined, locked).catch((error) => clear(noirWalletErrorState(error)));
+      });
     });
     return () => {
-      unsubscribe();
+      active = false;
+      unsubscribe?.();
       adapter.current = null;
     };
   }, [clear, load, mode.kind]);
 
   const connect = async () => {
-    const nextAdapter = adapter.current ?? (() => {
-      const provider = detectNoirWallet();
-      return provider ? new NoirWalletAdapter(provider) : null;
-    })();
+    const provider = adapter.current ? null : await waitForNoirWallet();
+    const nextAdapter = adapter.current ?? (provider ? new NoirWalletAdapter(provider) : null);
     if (!nextAdapter) return clear("unavailable");
     adapter.current = nextAdapter;
     setState("connecting");
@@ -127,7 +133,7 @@ export function NoirWalletCard() {
   return (
     <Card title={<span className="flex items-center gap-2"><Wallet size={15} aria-hidden /> Noir Wallet</span>} testId="noir-wallet-card"
       action={<Badge tone={state === "connected" ? "success" : state === "syncing" || state === "checking" || state === "connecting" ? "progress" : "neutral"}>{state === "connected" ? "Connected" : state === "syncing" ? "Syncing" : "Read-only"}</Badge>}>
-      {state === "unavailable" && <Notice tone="neutral" title="Noir Wallet is not installed">Install the official Noir Wallet extension, then return here. VeilPay will not request access automatically.</Notice>}
+      {state === "unavailable" && <Notice tone="neutral" title="Noir Wallet was not detected on this page">Confirm that the official extension is enabled and allowed to access this site, then reload. VeilPay will not request access automatically.</Notice>}
       {state === "disconnected" && <p className="text-sm text-zinc-400">Connect an account to view Noir Wallet-reported balances. VeilPay cannot spend, sign, or broadcast from this screen.</p>}
       {state === "locked" && <p className="text-sm text-amber-200">Noir Wallet is locked. Unlock it in the extension, then reconnect.</p>}
       {state === "rejected" && <p className="text-sm text-zinc-400">Connection was declined. No account information was retained.</p>}
