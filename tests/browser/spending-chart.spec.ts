@@ -102,6 +102,8 @@ test("spending chart: simulated completed spend, blocked attempt shown separatel
   await card.screenshot({ path: testInfo.outputPath("chart-populated-30d.png") });
   // Full-page shot only: pin the mobile bottom nav in flow so it is not painted over content.
   await page.addStyleTag({ content: 'nav.fixed[aria-label="Main"]{position:static!important}' });
+  // Back to the top first, or the sticky mock banner is painted where the page was last scrolled.
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("overview-with-chart.png"), fullPage: true });
 });
 
