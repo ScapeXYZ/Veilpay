@@ -43,7 +43,8 @@ describe("happy path", () => {
     const ex = await api.executePayment(p.id, "idem_exec_1");
     expect(ex.status).toBe("submitted");
     expect(ex.txid ?? null).toBeNull(); // mock never invents a txid
-    expect(ex.mockRef).toMatch(/^MOCK-REF-/);
+    expect(ex.mockRef).toMatch(/^mock_[0-9a-f]{32}$/);
+    expect(Payment.safeParse({ ...ex, mockRef: "a".repeat(64) }).success).toBe(false);
     await api.advance(p.id);
     await api.advance(p.id);
     const done = await api.getPayment(p.id);

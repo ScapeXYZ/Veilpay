@@ -13,24 +13,28 @@ import {
   VIOLATION_COPY,
   WALLET_OP_COPY,
   fmtTime,
-  paymentBadge,
   shortId,
   timelineTitle,
   unresolvedOf,
+  isSimulatedPayment,
+  paymentStatusLabel,
+  privacyLine,
+  confirmationsText,
   awaitingOperatorConfirmation,
   WALLET_PHASE_COPY,
 } from "@/lib/present";
+import Link from "next/link";
+import { CopyButton } from "./copy-button";
 import { MockAdvanceButton, MockReorgButton } from "./mock-controls";
 import { SourceTag, WriteBlocked } from "./source";
 import { Badge, Button, Card, ErrorBox, Notice, StatusBadge, Zec } from "./ui";
 
 export function PaymentBadge({ p }: { p: Payment }) {
   const mode = useNetworkMode();
-  const b = paymentBadge(p);
-  const label = mode.kind === "mock" && p.status === "confirmed" ? "Simulated complete" : b.label;
+  const b = paymentStatusLabel(p, isSimulatedPayment(p, mode.kind === "mock"));
   return (
     <StatusBadge tone={b.tone} testId={`badge-${p.id}`}>
-      {label}
+      {b.label}
     </StatusBadge>
   );
 }
@@ -54,7 +58,7 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
             <li key={i} className="rounded-lg bg-zinc-950/60 px-3 py-2 text-sm" data-testid={`violation-${v.code}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-zinc-100">{VIOLATION_COPY[v.code]}</span>
-                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80" title="Error code">{v.code}</code>
+                <code className="rounded bg-rose-950/70 px-1.5 py-0.5 font-mono text-[11px] text-rose-300/80 [overflow-wrap:anywhere]" title="Error code">{v.code}</code>
               </div>
               {!compact && <p className="mt-1 text-xs text-zinc-400">{v.message}</p>}
               {(v.limitZat || v.requestedZat) && (
@@ -75,12 +79,13 @@ export function DecisionPanel({ d, compact }: { d: Decision; compact?: boolean }
           ))}
         </ul>
       )}
-      {!compact && <p className="mt-3 text-xs text-zinc-500">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
+      {!compact && <p className="mt-3 text-xs text-zinc-500 [overflow-wrap:anywhere]">Decision {shortId(d.id)} · audit {d.auditHash}. Checked by the VeilPay server, not this page.</p>}
     </div>
   );
 }
 
 export function Timeline({ p }: { p: Payment }) {
+  const simulated = isSimulatedPayment(p, useNetworkMode().kind === "mock");
   return (
     <ol data-testid="timeline" className="relative ml-2 border-l border-zinc-800">
       {p.timeline.map((e, i) => {
@@ -97,7 +102,7 @@ export function Timeline({ p }: { p: Payment }) {
               aria-hidden
             />
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className={clsx("font-medium", last ? "text-zinc-50" : "text-zinc-300")}>{timelineTitle(e)}</span>
+              <span className={clsx("font-medium", last ? "text-zinc-50" : "text-zinc-300")}>{timelineTitle(e, simulated)}</span>
               {back && <Badge tone="warning">backward move</Badge>}
               <span className="text-xs text-zinc-500">{fmtTime(e.at)}</span>
             </div>
@@ -148,14 +153,14 @@ function ExecuteBlock({ p }: { p: Payment }) {
   const manual = mode.kind === "testnet_manual";
   return (
     <div className="rounded-xl border border-sky-900 bg-sky-950/20 p-4" data-testid="execute-block">
-      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the network confirms it.</p>
+      <p className="text-sm text-zinc-200">Approved and set aside. It counts as paid only once the server reports enough network confirmations{mode.kind === "mock" ? " (simulated in practice mode)" : ""}.</p>
       <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
         <Lock size={12} aria-hidden /> A sent payment cannot be pulled back. VeilPay sends it at most once{manual ? "; an operator sends it from outside this app" : ""}.
       </p>
       {mode.canExecute ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={() => ex.mutate(p.id)} busy={ex.isPending} data-testid="execute">
-            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : "Send privately"}
+            {retryable ? "Try again (same payment, never sent twice)" : manual ? "Hand to operator to send" : mode.kind === "mock" ? "Simulate send" : mode.kind === "testnet" ? "Send on the test network" : "Send"}
           </Button>
         </div>
       ) : (
@@ -168,6 +173,7 @@ function ExecuteBlock({ p }: { p: Payment }) {
 
 export function PaymentDetail({ p }: { p: Payment }) {
   const op = p.walletOperation;
+  const simulated = isSimulatedPayment(p, useNetworkMode().kind === "mock");
   const sentAlready = ["submitted", "confirming", "confirmed"].includes(p.status);
   return (
     <div className="flex flex-col gap-4" data-testid="payment-detail">
@@ -187,7 +193,7 @@ export function PaymentDetail({ p }: { p: Payment }) {
       <FailureNotice p={p} />
       <ExecuteBlock p={p} />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card title="Payment timeline" className="!bg-zinc-950/40">
           <Timeline p={p} />
           {["submitted", "confirming", "confirmed"].includes(p.status) && !unresolvedOf(p) && (
@@ -200,18 +206,30 @@ export function PaymentDetail({ p }: { p: Payment }) {
         <div className="flex flex-col gap-4">
           <DecisionPanel d={p.decision} />
           <Card title="Payment details" className="!bg-zinc-950/40" testId="send-record">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-zinc-500">Payment ID</dt>
+              <dd className="min-w-0" data-testid="payment-id">
+                <span className="flex flex-wrap items-center gap-2">
+                  <code className="font-mono text-xs text-zinc-100 [overflow-wrap:anywhere]" data-testid="payment-id-value">{p.id}</code>
+                  <CopyButton value={p.id} label="Copy" testId="copy-payment-id" />
+                </span>
+                <span className="mt-1 block text-xs text-zinc-500" data-testid="payment-id-help">
+                  To check this payment as the merchant, copy the ID and paste it on the{" "}
+                  <Link href="/app/merchant" className="text-accent-300 underline-offset-2 hover:underline">Merchant page</Link>.
+                </span>
+              </dd>
               <dt className="text-zinc-500">Status</dt>
-              <dd>{paymentBadge(p).label}</dd>
+              <dd data-testid="detail-status">{paymentStatusLabel(p, simulated).label}</dd>
               <dt className="text-zinc-500">Confirmations</dt>
-              <dd className="tabular-nums">{p.confirmations ?? 0}</dd>
+              <dd className="tabular-nums" data-testid="detail-confirmations">{confirmationsText(p.confirmations, null, simulated)}</dd>
               <dt className="text-zinc-500">Privacy</dt>
-              <dd>{p.pool ? `Private (${p.pool} pool)` : "Not sent yet"}</dd>
+              <dd data-testid="detail-privacy">{privacyLine(p, simulated)}</dd>
               <dt className="text-zinc-500">{p.mockRef ? "Practice reference" : "Transaction ID"}</dt>
-              <dd className="truncate font-mono text-xs" data-testid="tx-ref">
+              <dd className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]" data-testid="tx-ref">
                 {p.mockRef ? (
                   <>
-                    {p.mockRef} <Badge tone="neutral" className="ml-1">practice only, not a txid or a real transaction</Badge>
+                    {p.mockRef}
+                    <span className="mt-0.5 block font-sans text-zinc-500">Practice only, not a txid or a real transaction.</span>
                   </>
                 ) : p.txid ? (
                   <>

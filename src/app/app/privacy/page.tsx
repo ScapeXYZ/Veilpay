@@ -8,7 +8,8 @@ import { SourceTag } from "@/components/source";
 import { Card, Notice, Zec } from "@/components/ui";
 import { usePayments, useSession } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
-import { paymentBadge } from "@/lib/present";
+import { isSimulatedPayment, paymentStatusLabel, privacyEvidence } from "@/lib/present";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { Term } from "@/components/term";
 
 const LENSES = [
@@ -56,7 +57,7 @@ function Lens({ p, lens }: { p: Payment; lens: LensId }) {
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <List testId="lens-public" title="Anyone looking at the network sees" items={l?.publicChainSees} icon={<Globe size={16} className="text-zinc-400" aria-hidden />} tone="border-zinc-800 bg-zinc-950/40" />
-        <List testId="lens-hidden" title="Kept private" items={l?.hiddenOnChain} icon={<EyeOff size={16} className="text-emerald-400" aria-hidden />} tone="border-emerald-900/70 bg-emerald-950/15" />
+        <List testId="lens-hidden" title="Designed to stay private" items={l?.hiddenOnChain} icon={<EyeOff size={16} className="text-emerald-400" aria-hidden />} tone="border-emerald-900/70 bg-emerald-950/15" />
       </div>
     );
   if (lens === "merchant") return <List testId="lens-merchant" title="The merchant sees" items={l?.merchantSees} icon={<Store size={16} className="text-accent-300" aria-hidden />} tone="border-accent-900 bg-accent-950/30" />;
@@ -69,10 +70,11 @@ export default function PrivacyPage() {
   const withLens = (data?.items ?? []).filter((p) => p.privacy);
   const [selId, setSelId] = useState<string | null>(null);
   const [lens, setLens] = useState<LensId>("public");
+  const modeIsMock = useNetworkMode().kind === "mock";
   const sel = withLens.find((p) => p.id === selId) ?? withLens.find((p) => p.pool) ?? withLens[0];
   return (
     <>
-      <PageHeader title="Privacy" subtitle="Who can see what about a payment. Amounts, sender, receiver and notes stay private on the public network." />
+      <PageHeader title="Privacy" subtitle="Who is meant to see what about a payment. VeilPay is designed for shielded Zcash, where amounts, sender, receiver and notes are not public. This page explains the design; it does not verify it on a real network." />
       {!sel ? (
         <Notice tone="neutral" title="No payment to show yet">
           Open this page in the owner view, or make a payment first.
@@ -84,7 +86,7 @@ export default function PrivacyPage() {
               {withLens.map((p) => (
                 <button key={p.id} role="option" aria-selected={p.id === sel.id} onClick={() => setSelId(p.id)}
                   className={clsx("flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm", p.id === sel.id ? "bg-zinc-800 ring-1 ring-zinc-700" : "hover:bg-zinc-950")}>
-                  <span className="min-w-0"><span className="block truncate text-zinc-100">{p.reference}</span><span className="text-xs text-zinc-500">{paymentBadge(p).label}{p.pool ? ` · ${p.pool}` : ""}</span></span>
+                  <span className="min-w-0"><span className="block truncate text-zinc-100">{p.reference}</span><span className="text-xs text-zinc-500">{paymentStatusLabel(p, isSimulatedPayment(p, modeIsMock)).label}{p.pool ? ` · ${isSimulatedPayment(p, modeIsMock) ? "simulated " : ""}${p.pool}` : ""}</span></span>
                   <Zec zat={p.amountZat} className="shrink-0 text-xs text-zinc-300" />
                 </button>
               ))}
@@ -104,7 +106,7 @@ export default function PrivacyPage() {
             </div>
             <p className="text-xs text-zinc-500" data-testid="lens-evidence">
               Based on what the VeilPay server reports for {sel.reference}
-              {sel.pool ? ", sent privately" : ", not sent yet"}. The public can still see that a transaction happened, when, and its fee. This page does not check the network itself.
+              {privacyEvidence(sel, isSimulatedPayment(sel, modeIsMock))}. Even with shielded payments, the public can see that a transaction happened, when, and its fee. This page does not check the network itself.
             </p>
           </div>
         </div>

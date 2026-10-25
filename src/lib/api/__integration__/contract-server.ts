@@ -42,7 +42,7 @@ export async function startContractServer() {
         evaluatedAt: now(), violations: [], auditHash: "synthetic-contract-only" },
       timeline: [{ status, kind: "status", at: now() }], createdAt: now(),
       confirmations: status === "confirmed" ? 1 : 0, txid: null, pool: null,
-      mockRef: "SYNTHETIC-NOT-CHAIN-DATA", walletOperation: null, failure: null, ...patch,
+      mockRef: "mock_00000000000000000000000000000001", walletOperation: null, failure: null, ...patch,
     });
   }
   const op = (state: NonNullable<S.WalletOperation>["state"], needsOperator: boolean): S.WalletOperation => ({

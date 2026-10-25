@@ -22,6 +22,7 @@ const FILTERS: { id: string; label: string; match: (p: Payment) => boolean }[] =
 ];
 
 function Payments() {
+  const simLabels = useNetworkMode().kind === "mock";
   const { data, isLoading, error } = usePayments();
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string | null>(null);
@@ -52,7 +53,7 @@ function Payments() {
                   x.id === "attention" && n > 0 && filter !== x.id && "text-orange-300",
                 )}
               >
-                {x.label} <span className="text-zinc-500">{n}</span>
+                {simLabels && x.label === "Paid" ? "Simulated complete" : x.label} <span className="text-zinc-500">{n}</span>
               </button>
             );
           })}

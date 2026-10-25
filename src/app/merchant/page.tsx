@@ -12,7 +12,7 @@ import { isMockClient } from "@/lib/api";
 import { errorText, useAcknowledge, useApi, useCreateInvoice, useInvoice, useInvoices, useVerification } from "@/lib/api/hooks";
 import { newIdempotencyKey } from "@/lib/api/types";
 import type { Acknowledgment } from "@/lib/contract/schemas";
-import { VERIFICATION_COPY, ackEligibility, fmtTime } from "@/lib/present";
+import { ackEligibility, ackStatement, confirmationsText, fmtTime, isSimulatedVerification, verificationCopy } from "@/lib/present";
 import { parseZecInput } from "@/lib/zat";
 import { useHandoff } from "@/lib/handoff";
 import { InvoiceRequest } from "@/components/invoice-request";
@@ -24,7 +24,8 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
   const [done, setDone] = useState<Acknowledgment | null>(null);
   if (isLoading) return <Skeleton className="h-40" />;
   if (error || !v) return <ErrorBox>{errorText(error)}</ErrorBox>;
-  const copy = VERIFICATION_COPY[v.state];
+  const copy = verificationCopy(v);
+  const sim = isSimulatedVerification(v);
   const elig = ackEligibility(v);
   return (
     <Card
@@ -46,14 +47,12 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
           <dd>{v.expectedZat ? <Zec zat={v.expectedZat} /> : "n/a"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-zinc-500">Received</dt>
+          <dt className="text-xs text-zinc-500">{sim ? "Simulated receipt" : "Reported received"}</dt>
           <dd data-testid="received">{v.receivedZat ? <Zec zat={v.receivedZat} /> : "nothing seen"}</dd>
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Confirmations</dt>
-          <dd className="font-mono">
-            {v.confirmations}/{v.confirmationsRequired}
-          </dd>
+          <dd className="tabular-nums" data-testid="verification-confirmations">{confirmationsText(v.confirmations, v.confirmationsRequired, sim)}</dd>
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Checked</dt>
@@ -81,7 +80,7 @@ function VerificationCard({ paymentId }: { paymentId: string }) {
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {done && v.acknowledgmentValid !== false ? (
           <span className="flex items-center gap-1.5 text-sm text-emerald-300" data-testid="acknowledged">
-            <BadgeCheck size={16} aria-hidden /> Acknowledged {fmtTime(done.at)}. A server-authenticated merchant statement, not a settlement proof.
+            <BadgeCheck size={16} aria-hidden /> Acknowledged {fmtTime(done.at)}. {ackStatement(sim)}
             {done.invalidatedAt && (
               <span className="text-amber-300" data-testid="ack-statement-invalidated"> Invalidated {fmtTime(done.invalidatedAt)}{done.invalidationReason ? `: ${done.invalidationReason}` : ""}.</span>
             )}
@@ -199,12 +198,24 @@ function Lookup() {
   return (
     <div className="flex flex-col gap-4">
       <Card title="Verify a payment" testId="lookup">
-        <div className="flex gap-2">
-          <input aria-label="Payment ID to verify" className={`${inputCls} min-w-0 font-mono`} placeholder="payment id" value={input} onChange={(e) => setInput(e.target.value)} spellCheck={false} />
-          <Button variant="secondary" onClick={() => input.trim() && setActive(input.trim())}>
+        <ol className="mb-3 space-y-1 text-xs text-zinc-400" data-testid="verify-steps">
+          <li><span className="font-semibold text-zinc-300">1.</span> On the customer&apos;s payment page, find <b className="text-zinc-200">Payment ID</b> under Payment details and press <b className="text-zinc-200">Copy</b>.</li>
+          <li><span className="font-semibold text-zinc-300">2.</span> Paste it below and press <b className="text-zinc-200">Check</b> (or Enter).</li>
+          <li><span className="font-semibold text-zinc-300">3.</span> Read the receipt. In practice mode a match means the simulated payment matches the invoice, not that funds arrived.</li>
+        </ol>
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const id = input.trim();
+            if (id) setActive(id);
+          }}
+        >
+          <input id="verify-payment-id" aria-label="Payment ID to verify" data-testid="verify-input" className={`${inputCls} min-w-0 font-mono`} placeholder="Paste a Payment ID" value={input} onChange={(e) => setInput(e.target.value)} spellCheck={false} autoComplete="off" />
+          <Button type="submit" variant="secondary" data-testid="verify-check">
             <Search size={14} aria-hidden /> Check
           </Button>
-        </div>
+        </form>
         {ids.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {ids.map((id) => (
@@ -231,7 +242,7 @@ export default function MerchantPage() {
     <>
       <PageHeader
         title="Merchant verification"
-        subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer shares no keys; shielded payment amounts and parties are not public."
+        subtitle="Juniper Coffee checks that this invoice was paid, with its own viewing key. The customer shares no keys. In practice mode receipts and confirmations are simulated."
       />
       <RequireContext ctx="merchant">
         <Notice tone="neutral" title="What this proves, exactly">

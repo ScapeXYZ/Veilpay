@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { PaymentDetail, PaymentRow } from "@/components/payment";
 import { PageHeader, RequireContext } from "@/components/shell";
 import { Card, ErrorBox, Skeleton } from "@/components/ui";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, usePayment, usePayments } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { unresolvedOf } from "@/lib/present";
@@ -19,6 +20,7 @@ const FILTERS: { id: string; label: string; match: (p: Payment) => boolean }[] =
 ];
 
 function Payments() {
+  const simLabels = useNetworkMode().kind === "mock";
   const { data, isLoading, error } = usePayments();
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string | null>(null);
@@ -49,7 +51,7 @@ function Payments() {
                   x.id === "attention" && n > 0 && filter !== x.id && "text-orange-300",
                 )}
               >
-                {x.label} <span className="text-zinc-500">{n}</span>
+                {simLabels && x.label === "Paid" ? "Simulated complete" : x.label} <span className="text-zinc-500">{n}</span>
               </button>
             );
           })}
