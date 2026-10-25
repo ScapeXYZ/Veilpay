@@ -3,7 +3,9 @@
  * The repo-wide rule "no client storage for payment/session data" still holds: this module refuses
  * every key that is not in UI_PREF_KEYS, so payment, session, key or wallet data can never be stored here.
  */
-export const UI_PREF_KEYS = ["veilpay.onboarding.v1", "veilpay.onboarding.session"] as const;
+// veilpay.businessDraft.v1 = the wallet-UX business onboarding LOCAL draft: business name + category only,
+// never wallet data (see src/lib/wallet-ux/business-draft.ts).
+export const UI_PREF_KEYS = ["veilpay.onboarding.v1", "veilpay.onboarding.session", "veilpay.businessDraft.v1"] as const;
 export type UiPrefKey = (typeof UI_PREF_KEYS)[number];
 type Area = "local" | "session";
 
