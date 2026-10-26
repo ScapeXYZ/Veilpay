@@ -835,6 +835,16 @@ async fn perform(
             Ok((200, pol))
         }
         ("POST", ["merchant", "invoices"]) => {
+            // A live backend without a verified merchant receiving capability
+            // must never mint the mock-only invoice shape.  Keeping fixture
+            // invoices behind the no-wallet branch prevents testnet users from
+            // mistaking an internal placeholder for a payable Zcash request.
+            if app.wallet.is_some()
+                && !app.wallet.as_ref().is_some_and(|w| w.requires_operator())
+                && app.config.frontend_origin == "http://localhost:3200"
+            {
+                return Err(ApiError(409, "INVALID_TRANSITION"));
+            }
             let reference = text(b, "reference", 64)?;
             let amount = zat(b, "amountZat")?;
             if reference.trim().is_empty() || !(1..=2_100_000_000_000_000).contains(&amount) {

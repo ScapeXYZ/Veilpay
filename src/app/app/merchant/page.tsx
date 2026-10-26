@@ -20,6 +20,13 @@ import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function CreateInvoice() {
   const mode = useNetworkMode();
+  if (mode.kind === "disabled")
+    return (
+      <Card title="New invoice" testId="create-invoice-blocked">
+        <p className="text-sm text-zinc-300">Merchant invoice issuing is unavailable on this Testnet backend.</p>
+        <p className="mt-2 text-xs text-zinc-500">VeilPay will not create a placeholder, mock address, or payment request that could be mistaken for a payable Zcash invoice.</p>
+      </Card>
+    );
   if (!mode.canWrite)
     return (
       <Card title="New invoice" testId="create-invoice-blocked">
@@ -70,7 +77,7 @@ function CreateInvoiceForm() {
         >
           Create invoice
         </Button>
-        <span className="text-xs text-zinc-500">Mock invoices cannot receive funds.</span>
+        <span className="text-xs text-zinc-500">This invoice is backed by the configured merchant receiving capability.</span>
       </div>
       {(inputErr || create.error) && <div className="mt-3"><ErrorBox>{inputErr ?? errorText(create.error)}</ErrorBox></div>}
       {detail.error && <ErrorBox>{errorText(detail.error)}</ErrorBox>}
