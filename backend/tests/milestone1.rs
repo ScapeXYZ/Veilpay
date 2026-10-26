@@ -657,14 +657,14 @@ async fn session_rotation_invalidates_old_cookie_and_reports_unauthenticated_ses
         200
     );
     let old = call(
-            &f.router,
-            "GET",
-            "session",
-            Some(&f.customer),
-            None,
-            json!({})
-        )
-        .await;
+        &f.router,
+        "GET",
+        "session",
+        Some(&f.customer),
+        None,
+        json!({}),
+    )
+    .await;
     assert_eq!(old.status, 200);
     assert_eq!(old.body["authenticated"], false);
 }
@@ -837,11 +837,31 @@ async fn expired_policy_rejects_new_requests_without_reserving_budget() {
 #[tokio::test]
 async fn logout_revokes_the_server_session_before_clearing_its_cookie() {
     let f = Fixture::new().await;
-    let logout = call(&f.router, "DELETE", "session", Some(&f.customer), None, json!({})).await;
+    let logout = call(
+        &f.router,
+        "DELETE",
+        "session",
+        Some(&f.customer),
+        None,
+        json!({}),
+    )
+    .await;
     assert_eq!(logout.status, 200);
     assert_eq!(logout.body["authenticated"], false);
     assert!(logout.cookie.unwrap().contains("Max-Age=0"));
-    assert_eq!(call(&f.router, "GET", "agents", Some(&f.customer), None, json!({})).await.status, 401);
+    assert_eq!(
+        call(
+            &f.router,
+            "GET",
+            "agents",
+            Some(&f.customer),
+            None,
+            json!({})
+        )
+        .await
+        .status,
+        401
+    );
 }
 
 async fn register_live(router: &Router, origin: &str, name: &str, account_type: &str) -> Session {
@@ -876,11 +896,30 @@ async fn live_testnet_allows_only_authenticated_workspace_records() {
     .await
     .unwrap();
     let router = app.router();
-    let unauthenticated_session = call_at(&router, LIVE_ORIGIN, "GET", "session", None, None, json!({})).await;
+    let unauthenticated_session = call_at(
+        &router,
+        LIVE_ORIGIN,
+        "GET",
+        "session",
+        None,
+        None,
+        json!({}),
+    )
+    .await;
     assert_eq!(unauthenticated_session.status, 200);
     assert_eq!(unauthenticated_session.body["authenticated"], false);
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "POST", "agents", None, Some("unauth-key"), json!({})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "POST",
+            "agents",
+            None,
+            Some("unauth-key"),
+            json!({})
+        )
+        .await
+        .status,
         401
     );
     let first = register_live(&router, LIVE_ORIGIN, "First", "individual").await;
@@ -909,21 +948,61 @@ async fn live_testnet_allows_only_authenticated_workspace_records() {
     assert_eq!(policy.status, 200, "{}", policy.body);
     assert_eq!(policy.body["expiresAt"], "2099-01-01T00:00:00+00:00");
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "PATCH", &format!("agents/{agent_id}"), Some(&first), None, json!({"status":"paused"})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "PATCH",
+            &format!("agents/{agent_id}"),
+            Some(&first),
+            None,
+            json!({"status":"paused"})
+        )
+        .await
+        .status,
         200
     );
     let second = register_live(&router, LIVE_ORIGIN, "Second", "individual").await;
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "GET", &format!("agents/{agent_id}"), Some(&second), None, json!({})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "GET",
+            &format!("agents/{agent_id}"),
+            Some(&second),
+            None,
+            json!({})
+        )
+        .await
+        .status,
         404
     );
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "POST", "session/demo", None, None, json!({"context":"customer"})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "POST",
+            "session/demo",
+            None,
+            None,
+            json!({"context":"customer"})
+        )
+        .await
+        .status,
         404
     );
     let merchant = register_live(&router, LIVE_ORIGIN, "Merchant", "merchant").await;
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "POST", "merchant/invoices", Some(&merchant), Some("invoice-blocked"), json!({"reference":"No invoice","amountZat":"1"})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "POST",
+            "merchant/invoices",
+            Some(&merchant),
+            Some("invoice-blocked"),
+            json!({"reference":"No invoice","amountZat":"1"})
+        )
+        .await
+        .status,
         404
     );
     assert_eq!(
@@ -931,17 +1010,56 @@ async fn live_testnet_allows_only_authenticated_workspace_records() {
         404
     );
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "POST", "payments/pay_none/execute", Some(&first), Some("execute-blocked"), json!({})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "POST",
+            "payments/pay_none/execute",
+            Some(&first),
+            Some("execute-blocked"),
+            json!({})
+        )
+        .await
+        .status,
         404
     );
     assert_eq!(
-        call_at(&router, "https://evil.example", "PATCH", &format!("agents/{agent_id}"), Some(&first), None, json!({"status":"active"})).await.status,
+        call_at(
+            &router,
+            "https://evil.example",
+            "PATCH",
+            &format!("agents/{agent_id}"),
+            Some(&first),
+            None,
+            json!({"status":"active"})
+        )
+        .await
+        .status,
         403
     );
-    let logout = call_at(&router, LIVE_ORIGIN, "DELETE", "session", Some(&first), None, json!({})).await;
+    let logout = call_at(
+        &router,
+        LIVE_ORIGIN,
+        "DELETE",
+        "session",
+        Some(&first),
+        None,
+        json!({}),
+    )
+    .await;
     assert_eq!(logout.status, 200);
     assert_eq!(
-        call_at(&router, LIVE_ORIGIN, "GET", &format!("agents/{agent_id}"), Some(&first), None, json!({})).await.status,
+        call_at(
+            &router,
+            LIVE_ORIGIN,
+            "GET",
+            &format!("agents/{agent_id}"),
+            Some(&first),
+            None,
+            json!({})
+        )
+        .await
+        .status,
         401
     );
 }
@@ -1424,11 +1542,29 @@ async fn disabled_adapter_exposes_workspace_only_and_never_creates_payment_recor
     let (f, _, path) = adapter_fixture(Arc::new(ZingoWallet::new(Network::Testnet))).await;
     let agent = f.agent("100", "100").await;
     assert_eq!(
-        call(&f.router, "PATCH", &format!("agents/{}", agent["id"].as_str().unwrap()), Some(&f.customer), None, json!({"status":"paused"})).await.status,
+        call(
+            &f.router,
+            "PATCH",
+            &format!("agents/{}", agent["id"].as_str().unwrap()),
+            Some(&f.customer),
+            None,
+            json!({"status":"paused"})
+        )
+        .await
+        .status,
         200
     );
     assert_eq!(
-        call(&f.router, "POST", "merchant/invoices", Some(&f.merchant), Some("disabled-invoice"), json!({"reference":"never payable","amountZat":"1"})).await.status,
+        call(
+            &f.router,
+            "POST",
+            "merchant/invoices",
+            Some(&f.merchant),
+            Some("disabled-invoice"),
+            json!({"reference":"never payable","amountZat":"1"})
+        )
+        .await
+        .status,
         404
     );
     assert_eq!(
@@ -1436,10 +1572,27 @@ async fn disabled_adapter_exposes_workspace_only_and_never_creates_payment_recor
         404
     );
     assert_eq!(
-        call(&f.router, "POST", "payments/pay_none/execute", Some(&f.customer), Some("disabled-execute"), json!({})).await.status,
+        call(
+            &f.router,
+            "POST",
+            "payments/pay_none/execute",
+            Some(&f.customer),
+            Some("disabled-execute"),
+            json!({})
+        )
+        .await
+        .status,
         404
     );
-    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM records WHERE kind IN ('invoice','payment')").fetch_one(&f.app.pool).await.unwrap(), 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM records WHERE kind IN ('invoice','payment')"
+        )
+        .fetch_one(&f.app.pool)
+        .await
+        .unwrap(),
+        0
+    );
     cleanup_fixture(f, path).await;
 }
 
@@ -1692,10 +1845,21 @@ async fn mainnet_gate_blocks_even_an_injected_adapter() {
         ("PUT", "agents/agt_none/policy", None),
         ("DELETE", "session", None),
     ] {
-        assert_eq!(call(&f.router, method, path, Some(&f.customer), key, json!({})).await.status, 404);
+        assert_eq!(
+            call(&f.router, method, path, Some(&f.customer), key, json!({}))
+                .await
+                .status,
+            404
+        );
     }
     assert_eq!(adapter.submits.load(Ordering::SeqCst), 0);
-    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM records").fetch_one(&f.app.pool).await.unwrap(), 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM records")
+            .fetch_one(&f.app.pool)
+            .await
+            .unwrap(),
+        0
+    );
     let health = call(&f.router, "GET", "health", None, None, json!({})).await;
     assert_eq!(health.body["mode"], "disabled");
     assert_eq!(health.body["wallet"], "broadcast_disabled");

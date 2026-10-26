@@ -103,7 +103,11 @@ fn id(prefix: &str) -> String {
 fn session_token() -> String {
     // 256 bits of browser-held entropy. The database holds only its SHA-256
     // digest, never this bearer credential.
-    format!("ses_{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
+    format!(
+        "ses_{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
 }
 fn token_hash(token: &str) -> String {
     format!("{:x}", Sha256::digest(token.as_bytes()))
@@ -386,7 +390,13 @@ impl App {
                     .expect("valid frontend origin"),
             )
             .allow_credentials(true)
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
             .allow_headers([
                 "content-type".parse().unwrap(),
                 "x-csrf-token".parse().unwrap(),
@@ -402,21 +412,34 @@ impl App {
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get("cookie").and_then(|x| x.to_str().ok()).unwrap_or("")
-        .split(';').find_map(|s| s.trim().strip_prefix(&format!("{name}="))).map(str::to_owned)
+    headers
+        .get("cookie")
+        .and_then(|x| x.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .find_map(|s| s.trim().strip_prefix(&format!("{name}=")))
+        .map(str::to_owned)
 }
 fn cookie_name(config: &Config) -> &'static str {
     // The interactive testnet frontend is deliberately bound to this loopback
     // development origin. All other environments retain the hardened __Host
     // cookie invariant (including fixture coverage).
-    if config.frontend_origin == "http://localhost:3200" { "veilpay_session" } else { "__Host-veilpay_session" }
+    if config.frontend_origin == "http://localhost:3200" {
+        "veilpay_session"
+    } else {
+        "__Host-veilpay_session"
+    }
 }
 fn set_session_cookie(config: &Config, token: &str) -> String {
     if config.frontend_origin == "http://localhost:3200" {
         // Loopback-only local testnet development cannot use a __Host cookie on
         // plain HTTP. Production requires HTTPS above.
         format!("veilpay_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800")
-    } else { format!("__Host-veilpay_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800") }
+    } else {
+        format!(
+            "__Host-veilpay_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800"
+        )
+    }
 }
 fn clear_session_cookie(config: &Config) -> String {
     if config.frontend_origin == "http://localhost:3200" {
@@ -518,7 +541,8 @@ async fn dispatch(
             .is_some_and(|wallet| wallet.workspace_only());
     if write
         && (app.config.network == "mainnet"
-            || ((disabled_testnet || public_origin(&app.config)) && !workspace_write(&parts, &method)))
+            || ((disabled_testnet || public_origin(&app.config))
+                && !workspace_write(&parts, &method)))
     {
         return Err(ApiError(404, "NOT_FOUND"));
     }
@@ -532,12 +556,22 @@ async fn dispatch(
     };
     let cookie = cookie_value(&h, cookie_name(&app.config)).unwrap_or_default();
     if path == "auth/register" && method == Method::POST {
-        if app.config.network == "mainnet" { return Err(ApiError(404, "NOT_FOUND")); }
+        if app.config.network == "mainnet" {
+            return Err(ApiError(404, "NOT_FOUND"));
+        }
         let display_name = text(&body, "displayName", 64)?;
-        if display_name.trim().is_empty() { return Err(invalid()); }
+        if display_name.trim().is_empty() {
+            return Err(invalid());
+        }
         let account_type = text(&body, "accountType", 16)?;
-        if !["individual", "freelancer", "merchant", "team", "business"].contains(&account_type) { return Err(invalid()); }
-        let context = if account_type == "merchant" { "merchant" } else { "customer" };
+        if !["individual", "freelancer", "merchant", "team", "business"].contains(&account_type) {
+            return Err(invalid());
+        }
+        let context = if account_type == "merchant" {
+            "merchant"
+        } else {
+            "customer"
+        };
         let account_id = id("usr");
         let token = session_token();
         let csrf = id("csrf");
@@ -547,8 +581,15 @@ async fn dispatch(
         sqlx::query("INSERT INTO account_sessions(token_hash,context,csrf,expires_at,principal,account_id) VALUES(?,?,?,?,?,?)")
             .bind(token_hash(&token)).bind(context).bind(&csrf).bind(&expires).bind(&account_id).bind(&account_id).execute(&mut *tx).await?;
         tx.commit().await?;
-        let mut r = reply(201, &json!({"authenticated":true,"context":context,"accountId":account_id,"accountType":account_type,"agentId":null,"merchantId":if context=="merchant"{Some(account_id.as_str())}else{None},"csrfToken":csrf,"expiresAt":expires}), false);
-        r.headers_mut().insert("set-cookie", set_session_cookie(&app.config, &token).parse().unwrap());
+        let mut r = reply(
+            201,
+            &json!({"authenticated":true,"context":context,"accountId":account_id,"accountType":account_type,"agentId":null,"merchantId":if context=="merchant"{Some(account_id.as_str())}else{None},"csrfToken":csrf,"expiresAt":expires}),
+            false,
+        );
+        r.headers_mut().insert(
+            "set-cookie",
+            set_session_cookie(&app.config, &token).parse().unwrap(),
+        );
         return Ok(r);
     }
     if path == "session/demo" && method == Method::POST {
@@ -598,12 +639,17 @@ async fn dispatch(
             &json!({"authenticated":true,"context":role,"accountId":null,"accountType":null,"merchantId":if role=="merchant"{Some("mer_demo")}else{None},"agentId":null,"csrfToken":csrf,"expiresAt":expires}),
             false,
         );
-        r.headers_mut().insert("set-cookie",set_session_cookie(&app.config, &token).parse().unwrap());
+        r.headers_mut().insert(
+            "set-cookie",
+            set_session_cookie(&app.config, &token).parse().unwrap(),
+        );
         return Ok(r);
     }
     let session = sqlx::query("SELECT context,csrf,expires_at,principal,account_id FROM account_sessions WHERE token_hash=? AND expires_at>?")
         .bind(token_hash(&cookie)).bind(now()).fetch_optional(&mut *tx).await?;
-    let session = if let Some(session) = session { Some(session) } else {
+    let session = if let Some(session) = session {
+        Some(session)
+    } else {
         sqlx::query("SELECT context,csrf,expires_at,CASE context WHEN 'customer' THEN 'customer_demo' ELSE 'mer_demo' END as principal,NULL as account_id FROM sessions WHERE token=? AND expires_at>?")
             .bind(&cookie).bind(now()).fetch_optional(&mut *tx).await?
     };
@@ -618,7 +664,11 @@ async fn dispatch(
         // Session discovery is a non-sensitive state probe. Returning an
         // explicit unauthenticated shape avoids a browser-console 401 during
         // first load while every protected record route still fails closed.
-        return Ok(reply(200, &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}), false));
+        return Ok(reply(
+            200,
+            &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}),
+            false,
+        ));
     }
     let session = session.ok_or(ApiError(401, "UNAUTHENTICATED"))?;
     let role: String = session.get(0);
@@ -649,8 +699,15 @@ async fn dispatch(
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        let mut r = reply(200, &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}), false);
-        r.headers_mut().insert("set-cookie", clear_session_cookie(&app.config).parse().unwrap());
+        let mut r = reply(
+            200,
+            &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}),
+            false,
+        );
+        r.headers_mut().insert(
+            "set-cookie",
+            clear_session_cookie(&app.config).parse().unwrap(),
+        );
         return Ok(r);
     }
     let merchant = parts.first() == Some(&"merchant")
@@ -737,8 +794,7 @@ fn evaluate(a: &Value, i: &Value, amount: i64, expires: &str, own: i64) -> Resul
     if a["status"] == "paused" {
         add("AGENT_PAUSED")
     }
-    if p
-        .get("expiresAt")
+    if p.get("expiresAt")
         .and_then(Value::as_str)
         .map(date)
         .transpose()?
@@ -813,14 +869,7 @@ async fn decision(
         "rejected"
     };
     let d = json!({"id":id("dec"),"result":result,"policyVersion":policy["version"],"evaluatedAt":now(),"violations":violations,"auditHash":format!("{:x}",Sha256::digest(json!([request,policy["version"],result]).to_string().as_bytes()))});
-    put(
-        c,
-        "decision",
-        d["id"].as_str().unwrap(),
-        owner,
-        &d,
-    )
-    .await?;
+    put(c, "decision", d["id"].as_str().unwrap(), owner, &d).await?;
     Ok(d)
 }
 async fn expire(c: &mut SqliteConnection, owner: &str) -> Result<()> {
