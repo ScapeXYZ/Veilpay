@@ -66,6 +66,12 @@ export class LiveApiClient implements ApiClient {
     return s;
   }
 
+  async registerAccount(body: z.infer<typeof S.AccountRegister>) {
+    const s = await this.call(S.Session, "POST", "/auth/register", { body: S.AccountRegister.parse(body) });
+    this.csrfToken = s.csrfToken;
+    return s;
+  }
+
   async getSession() {
     const s = await this.call(S.Session, "GET", "/session");
     this.csrfToken = s.csrfToken;
@@ -79,6 +85,10 @@ export class LiveApiClient implements ApiClient {
 
   createAgent(body: { name: string; policy: S.PolicyRules }, idempotencyKey: string) {
     return this.call(S.Agent, "POST", "/agents", { body: S.AgentCreate.parse(body), idempotencyKey, csrf: true });
+  }
+
+  listAgents() {
+    return this.call(S.AgentList, "GET", "/agents");
   }
 
   getAgent(agentId: string) {

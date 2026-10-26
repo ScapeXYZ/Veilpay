@@ -56,7 +56,7 @@ impl App {
             zat(&payment, "amountZat")?,
         )?;
         let request = owned(c, "payment_request", pid, "customer_demo").await?;
-        payment["decision"] = decision(c, &request, &agent["policy"], violations.clone()).await?;
+        payment["decision"] = decision(c, "customer_demo", &request, &agent["policy"], violations.clone()).await?;
         put(c, "payment", pid, "customer_demo", &payment).await?;
         if !violations.is_empty() {
             return Err(ApiError(409, "POLICY_REJECTED"));

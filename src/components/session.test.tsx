@@ -12,7 +12,7 @@ describe("Session loading and recovery", () => {
     const api = new MockApiClient({ latencyMs: 0 });
     const session = await api.createDemoSession("customer");
     vi.spyOn(api, "getSession").mockImplementation(() => new Promise(() => {}));
-    render(<Providers client={api}><RequireContext ctx={session.context}>Protected view</RequireContext></Providers>);
+    render(<Providers client={api}><RequireContext ctx={session.context!}>Protected view</RequireContext></Providers>);
     expect(screen.getByRole("status", { name: "Loading" })).toHaveAttribute("aria-busy", "true");
   });
   it("keeps the named loading status while live health is still identifying the network", () => {
@@ -26,7 +26,7 @@ describe("Session loading and recovery", () => {
     const api = new MockApiClient({ latencyMs: 0 });
     const session = await api.createDemoSession("customer");
     vi.spyOn(api, "getSession").mockRejectedValueOnce(new Error("Service unavailable")).mockResolvedValue(session);
-    render(<Providers client={api}><RequireContext ctx={session.context}>Protected view</RequireContext></Providers>);
+    render(<Providers client={api}><RequireContext ctx={session.context!}>Protected view</RequireContext></Providers>);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load your session");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Protected view")).toBeInTheDocument();

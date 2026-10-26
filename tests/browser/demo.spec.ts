@@ -26,6 +26,11 @@ async function createInvoice(page: import("@playwright/test").Page, amount: stri
   return (await form.getByTestId("invoice-id").textContent())!.trim();
 }
 
+async function openPaymentRequests(page: import("@playwright/test").Page) {
+  const label = (page.viewportSize()?.width ?? 0) >= 768 ? "Payment requests" : "Requests";
+  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: label }).click();
+}
+
 test("live regtest/mock presents the redesigned application shell as a simulation", async ({ page }) => {
   await page.goto("/app");
   await expect(page.getByTestId("mock-banner")).toContainText(/mock practice mode/i);
@@ -81,7 +86,7 @@ test("actual Axum mock flow enforces the allowance, simulates one permitted paym
   const agentId = await createAgent(page);
   expect(agentId).toMatch(/^agt_/);
 
-  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Payment requests" }).click();
+  await openPaymentRequests(page);
   await page.getByTestId("new-payment").click();
   const request = page.getByTestId("request-new");
   await request.getByLabel("Invoice ID").fill(allowedInvoice);
@@ -116,7 +121,7 @@ test("actual Axum rejects an over-cap request and leaves it visibly unpaid", asy
   const oversizedInvoice = await createInvoice(page, "0.75", "BROWSER-OVER-CAP");
   await createAgent(page);
 
-  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Payment requests" }).click();
+  await openPaymentRequests(page);
   await page.getByTestId("new-payment").click();
   const request = page.getByTestId("request-new");
   await request.getByLabel("Invoice ID").fill(oversizedInvoice);
@@ -141,7 +146,7 @@ test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and s
   await expect(page.getByTestId("agent-summary")).toContainText("1.00 ZEC");
   await expect(page.getByTestId("agent-summary")).toContainText("0.10 ZEC");
 
-  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Payment requests" }).click();
+  await openPaymentRequests(page);
   await page.getByTestId("new-payment").click();
   let request = page.getByTestId("request-new");
   await request.getByLabel("Invoice ID").fill(blockedInvoice);
@@ -152,7 +157,7 @@ test("deterministic hackathon walkthrough uses one 1 ZEC agent for blocked and s
   await expect(rejected.getByTestId("violation-CAP_EXCEEDED")).toBeVisible();
   await expect(rejected).toContainText(/no money moved and nothing was set aside/i);
 
-  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Payment requests" }).click();
+  await openPaymentRequests(page);
   await page.getByTestId("new-payment").click();
   request = page.getByTestId("request-new");
   await request.getByLabel("Invoice ID").fill(allowedInvoice);

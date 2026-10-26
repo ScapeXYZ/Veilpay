@@ -267,6 +267,7 @@ export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"
     <p>Could not load your session. {errorText(error)}</p>
     <Button variant="secondary" onClick={() => refetch()}>Try again</Button>
   </ErrorBox>;
+  if (!s.authenticated) return <div data-testid="auth-required" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">Create a VeilPay testnet workspace on Overview before managing agents, policies, or payment requests. Connecting a wallet does not create backend ownership.</div>;
   const role = ctx === "customer" ? "owner" : "merchant";
   if (wrong)
     return (

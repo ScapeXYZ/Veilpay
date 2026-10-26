@@ -913,12 +913,26 @@ components:
     Session:
       type: object
       required:
+      - authenticated
       - context
       - expiresAt
       - csrfToken
       properties:
+        authenticated:
+          type: boolean
+        accountId:
+          type:
+          - string
+          - 'null'
+        accountType:
+          type:
+          - string
+          - 'null'
+          enum: [individual, freelancer, merchant, team, business, null]
         context:
-          type: string
+          type:
+          - string
+          - 'null'
           enum:
           - customer
           - merchant
@@ -931,10 +945,14 @@ components:
           - string
           - 'null'
         expiresAt:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
         csrfToken:
-          type: string
+          type:
+          - string
+          - 'null'
           description: Send as X-CSRF-Token on every state-changing request.
     AgentStatus:
       type: string

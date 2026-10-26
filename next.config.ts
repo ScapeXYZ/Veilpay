@@ -19,9 +19,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Keep Next's project-local `tsc` build check enabled. The compiler-API
-  // worker can stall in restricted runners after compilation completes.
-  experimental: { useTypeScriptCli: true },
+  // Keep Next's TypeScript build check enabled. The CLI runner receives empty
+  // stdout from TypeScript 5.9 under this local Node 22 environment, so use
+  // Next's supported compiler-API checker rather than parsing that stream.
+  experimental: { useTypeScriptCli: false },
   turbopack: { root: import.meta.dirname },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
