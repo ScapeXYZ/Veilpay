@@ -90,6 +90,18 @@ export function useRegisterAccount() {
   return useMutation({ mutationFn: (body: { displayName: string; accountType: "individual" | "freelancer" | "merchant" | "team" | "business" }) => api.registerAccount(body), onSuccess: (session) => { qc.setQueryData(qk.session, session); qc.invalidateQueries({ queryKey: qk.agents }); } });
 }
 
+/** Explicit logout is a server-side revocation, not only a local UI reset. */
+export function useLogout() {
+  const api = useApi(); const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.logout(),
+    onSuccess: (session) => {
+      qc.clear();
+      qc.setQueryData(qk.session, session);
+    },
+  });
+}
+
 export function useSwitchContext() {
   const api = useApi();
   const qc = useQueryClient();

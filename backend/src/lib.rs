@@ -146,9 +146,22 @@ fn policy(v: &Value, version: i64) -> Result<Value> {
     if !(30..=86400).contains(&ttl) {
         return Err(invalid());
     }
-    Ok(
-        json!({"perTxLimitZat":v["perTxLimitZat"],"totalBudgetZat":v["totalBudgetZat"],"allowedMerchantIds":a,"requestTtlSeconds":ttl,"version":version,"updatedAt":now()}),
-    )
+    let expires = v
+        .get("expiresAt")
+        .map(|x| date(x.as_str().ok_or_else(invalid)?))
+        .transpose()?;
+    // A policy that is already expired could look valid in a browser while
+    // silently rejecting every request. Refuse it at write time instead.
+    if expires.is_some_and(|expiry| expiry <= Utc::now()) {
+        return Err(invalid());
+    }
+    let mut out = json!({"perTxLimitZat":v["perTxLimitZat"],"totalBudgetZat":v["totalBudgetZat"],"allowedMerchantIds":a,"requestTtlSeconds":ttl,"version":version,"updatedAt":now()});
+    // Optional contract fields are absent when unset. Returning JSON null here
+    // would make a strict client mistake a valid policy for a malformed one.
+    if let Some(expiry) = expires {
+        out["expiresAt"] = json!(expiry.to_rfc3339());
+    }
+    Ok(out)
 }
 async fn get(c: &mut SqliteConnection, kind: &str, key: &str) -> Result<(String, Value)> {
     let r = sqlx::query("SELECT owner,body FROM records WHERE kind=? AND id=?")
@@ -373,7 +386,7 @@ impl App {
                     .expect("valid frontend origin"),
             )
             .allow_credentials(true)
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH])
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
             .allow_headers([
                 "content-type".parse().unwrap(),
                 "x-csrf-token".parse().unwrap(),
@@ -404,6 +417,13 @@ fn set_session_cookie(config: &Config, token: &str) -> String {
         // plain HTTP. Production requires HTTPS above.
         format!("veilpay_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800")
     } else { format!("__Host-veilpay_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800") }
+}
+fn clear_session_cookie(config: &Config) -> String {
+    if config.frontend_origin == "http://localhost:3200" {
+        "veilpay_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0".into()
+    } else {
+        "__Host-veilpay_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0".into()
+    }
 }
 async fn handle(
     State(app): State<App>,
@@ -567,6 +587,24 @@ async fn dispatch(
             false,
         ));
     }
+    if path == "session" && method == Method::DELETE {
+        // Revoke the bearer credential server-side before clearing the browser
+        // cookie. A copied or restored cookie cannot recover this session.
+        sqlx::query("DELETE FROM account_sessions WHERE token_hash=?")
+            .bind(token_hash(&cookie))
+            .execute(&mut *tx)
+            .await?;
+        // This only affects the legacy isolated fixture session table. It is
+        // harmless for authenticated sessions and keeps logout semantics clear.
+        sqlx::query("DELETE FROM sessions WHERE token=?")
+            .bind(&cookie)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        let mut r = reply(200, &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}), false);
+        r.headers_mut().insert("set-cookie", clear_session_cookie(&app.config).parse().unwrap());
+        return Ok(r);
+    }
     let merchant = parts.first() == Some(&"merchant")
         || matches!(parts.get(2), Some(&"verification" | &"acknowledgment"));
     if (merchant && role != "merchant") || (!merchant && role != "customer") {
@@ -650,6 +688,15 @@ fn evaluate(a: &Value, i: &Value, amount: i64, expires: &str, own: i64) -> Resul
         |code: &str| violations.push(json!({"code":code,"message":code.replace('_'," ")}));
     if a["status"] == "paused" {
         add("AGENT_PAUSED")
+    }
+    if p
+        .get("expiresAt")
+        .and_then(Value::as_str)
+        .map(date)
+        .transpose()?
+        .is_some_and(|expiry| expiry <= Utc::now())
+    {
+        add("POLICY_EXPIRED")
     }
     if amount > zat(p, "perTxLimitZat")? {
         add("CAP_EXCEEDED")

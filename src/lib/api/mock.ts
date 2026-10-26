@@ -283,6 +283,11 @@ export class MockApiClient implements ApiClient, MockControls {
     return this.respond(S.Session, this.session);
   }
 
+  async logout() {
+    this.session = null;
+    return this.respond(S.Session, { authenticated: false, context: null, accountId: null, accountType: null, agentId: null, merchantId: null, csrfToken: null, expiresAt: null });
+  }
+
   async createAgent(body: { name: string; policy: S.PolicyRules }, idempotencyKey: string): Promise<S.Agent> {
     this.requireCtx("customer");
     S.AgentCreate.parse(body);

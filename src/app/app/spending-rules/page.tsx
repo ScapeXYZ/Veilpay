@@ -28,7 +28,7 @@ function Section({ icon, title, help, children }: { icon: ReactNode; title: stri
   );
 }
 
-type Draft = { perTxLimitZat: string; totalBudgetZat: string; allowedMerchantIds: string[]; requestTtlSeconds?: number };
+type Draft = { perTxLimitZat: string; totalBudgetZat: string; allowedMerchantIds: string[]; requestTtlSeconds?: number; expiresAt?: string };
 
 function diffRows(a: Agent, d: Draft) {
   const rows: { label: string; from: ReactNode; to: ReactNode }[] = [];
@@ -39,6 +39,7 @@ function diffRows(a: Agent, d: Draft) {
   if (am !== dm) rows.push({ label: "Approved merchants", from: am || "none", to: dm || "none" });
   const at = a.policy.requestTtlSeconds;
   if (d.requestTtlSeconds !== undefined && d.requestTtlSeconds !== at) rows.push({ label: "Approval time limit", from: at ? `${at}s` : "default", to: `${d.requestTtlSeconds}s` });
+  if (d.expiresAt !== a.policy.expiresAt) rows.push({ label: "Policy expires", from: a.policy.expiresAt ? fmtTime(a.policy.expiresAt) : "Never", to: d.expiresAt ? fmtTime(d.expiresAt) : "Never" });
   return rows;
 }
 
@@ -50,6 +51,7 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
   const [budget, setBudget] = useState(() => formatZec(a.policy.totalBudgetZat, { unit: false }));
   const [merchants, setMerchants] = useState(() => a.policy.allowedMerchantIds.join(", "));
   const [ttl, setTtl] = useState(() => (a.policy.requestTtlSeconds ? String(a.policy.requestTtlSeconds) : ""));
+  const [expiry, setExpiry] = useState(() => a.policy.expiresAt ? a.policy.expiresAt.slice(0, 16) : "");
   const [inputErr, setInputErr] = useState<string | null>(null);
   const [review, setReview] = useState<Draft | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
@@ -63,7 +65,9 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
     const ttlN = ttl.trim() === "" ? undefined : Number(ttl);
     if (!perTxLimitZat || !totalBudgetZat) return setInputErr("Amounts must be ZEC with at most 8 decimals.");
     if (ttlN !== undefined && (!Number.isInteger(ttlN) || ttlN < 30 || ttlN > 86400)) return setInputErr("The time limit must be 30 to 86400 seconds.");
-    const d: Draft = { perTxLimitZat, totalBudgetZat, allowedMerchantIds: merchants.split(",").map((m) => m.trim()).filter(Boolean), ...(ttlN !== undefined ? { requestTtlSeconds: ttlN } : {}) };
+    const expiresAt = expiry.trim() === "" ? undefined : new Date(expiry).toISOString();
+    if (expiresAt !== undefined && (Number.isNaN(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now())) return setInputErr("Choose a future policy expiration, or leave it blank.");
+    const d: Draft = { perTxLimitZat, totalBudgetZat, allowedMerchantIds: merchants.split(",").map((m) => m.trim()).filter(Boolean), ...(ttlN !== undefined ? { requestTtlSeconds: ttlN } : {}), ...(expiresAt ? { expiresAt } : {}) };
     if (diffRows(a, d).length === 0) return setInputErr("Nothing changed.");
     setReview(d);
   };
@@ -111,8 +115,13 @@ function PolicyEditor({ agent: a }: { agent: Agent }) {
             <input className={`${inputCls} tabular-nums`} value={ttl} onChange={(e) => setTtl(e.target.value)} readOnly={ro} inputMode="numeric" />
           </Field>
         </Section>
+        <Section icon={<CalendarClock size={15} aria-hidden />} title="Policy expiration" help="After this time the backend denies new requests. Leave blank only when you intend this policy to remain active.">
+          <Field label="Expires (local time, optional)">
+            <input className={`${inputCls} tabular-nums`} type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)} readOnly={ro} data-testid="policy-expiry-input" />
+          </Field>
+        </Section>
         <Section icon={<UserCheck size={15} aria-hidden />} title="Your approval" help="Asking you before each payment.">
-          <p className="text-sm text-zinc-400" data-testid="approval-pending">Coming later. Today every payment inside the rules is approved automatically; the operator&apos;s send step is separate and is not your approval.</p>
+          <p className="text-sm text-zinc-400" data-testid="approval-pending">Not available in this release. A policy allow is not wallet authorization, and VeilPay does not sign, send, or broadcast.</p>
         </Section>
 
         {ro ? (

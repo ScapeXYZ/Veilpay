@@ -7,8 +7,9 @@ import { MockControlsPanel } from "@/components/mock-controls";
 import { useOnboarding } from "@/lib/onboarding";
 import { PageHeader } from "@/components/shell";
 import { GLOSSARY } from "@/components/term";
-import { Card } from "@/components/ui";
+import { Button, Card, ErrorBox } from "@/components/ui";
 import { useNetworkMode } from "@/lib/api/data-source";
+import { errorText, useLogout, useSession } from "@/lib/api/hooks";
 import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 
 function Answer({ icon, q, children }: { icon: ReactNode; q: string; children: ReactNode }) {
@@ -28,6 +29,8 @@ export default function HelpPage() {
   const mode = useNetworkMode();
   const mock = mode.kind === "mock";
   const testnet = mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled";
+  const { data: session } = useSession();
+  const logout = useLogout();
   if (mode.kind === "mainnet_readonly" || mode.kind === "unknown") {
     return <><PageHeader title={mode.kind === "unknown" ? "Server status unavailable" : "Mainnet safety"} subtitle={mode.kind === "unknown" ? "Wallet observation remains local and read-only. Server-backed features are disabled." : "VeilPay observes mainnet wallet data only. It does not create payment requests, invoices, or transactions."} /><MainnetReadOnlyNotice area="Interactive demos" unknown={mode.kind === "unknown"} /></>;
   }
@@ -71,6 +74,14 @@ export default function HelpPage() {
         <Answer icon={<CheckCircle2 size={16} aria-hidden />} q="When is a payment “paid”?">Only when the VeilPay server reports the required network confirmations.{mock && " In practice mode those confirmations are simulated."} Approved, sent, confirmed and checked by the merchant are always shown as separate steps.</Answer>
         <Answer icon={<ShieldCheck size={16} aria-hidden />} q="Is the wallet balance my agent's money?">No. The wallet is shared, so VeilPay does not show its balance as your agent&apos;s funds. Your agent&apos;s limit is the budget in Spending rules.</Answer>
       </Card>
+
+      {session?.authenticated && (
+        <Card title="Session" testId="session-settings">
+          <p className="text-sm text-zinc-400">This logs out of the VeilPay workspace only. It does not disconnect Noir Wallet or send wallet information to VeilPay.</p>
+          <Button className="mt-4" variant="secondary" busy={logout.isPending} onClick={() => logout.mutate()} data-testid="logout-session">Log out and revoke this session</Button>
+          {logout.error && <div className="mt-3"><ErrorBox>{errorText(logout.error)}</ErrorBox></div>}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <Link href="/app/activity" className="group rounded-2xl border border-zinc-800 bg-zinc-900 p-5 hover:border-zinc-700" data-testid="help-activity">

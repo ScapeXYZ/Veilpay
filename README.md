@@ -1,20 +1,34 @@
-# VeilPay backend
+# VeilPay
 
-Rust Axum and SQLite. The submission default is Zcash **mainnet observation
-only**: the browser connects to Noir Wallet directly for wallet-reported
-addresses, balances, and local activity. VeilPay never signs, broadcasts,
-creates invoices, or presents simulated payment data in this mode. Mainnet
-execution is disabled. An acknowledgment is a merchant statement, never a
-cryptographic settlement proof.
+VeilPay is a policy-control layer for payment agents: the agent can be given a
+budget, a per-payment cap, approved merchant identifiers, an expiry, and a
+revocable status without receiving wallet keys. This submission is a **Zcash
+Testnet, browser-observed, broadcast-disabled** build. Noir Wallet reports its
+own addresses, balances, and activity directly to the browser; VeilPay does not
+receive them.
+
+The live Testnet workflow is intentionally limited to authenticated VeilPay
+workspaces, user-owned agent records, server-enforced rules, session revocation,
+and read-only wallet observation. A policy decision is not wallet authorization,
+payment execution, or settlement. Merchant invoice creation remains unavailable
+until shielded receiving-address ownership can be verified safely. There are no
+live placeholder invoices, transactions, receipts, or settlement claims.
+
+Read [feature status](docs/TESTNET_FEATURE_STATUS.md), the
+[merchant receiving decision](docs/merchant-receiving-architecture.md), and the
+[privacy threat model](docs/PRIVACY_THREAT_MODEL.md) before running a demo.
 
 ```bash
-NETWORK=mainnet WALLET_BACKEND=zingo DATABASE_URL=sqlite://veilpay-mainnet.db FRONTEND_ORIGIN=http://localhost:3100 cargo run --locked --manifest-path backend/Cargo.toml
+NETWORK=testnet WALLET_BACKEND=zingo BIND_ADDR=127.0.0.1:4100 FRONTEND_ORIGIN=http://localhost:3200 DATABASE_URL=sqlite:///private/path/veilpay-testnet.db cargo run --locked --manifest-path backend/Cargo.toml
 ```
 
-Demo sessions are isolated test fixtures, not production identity, and are not
-created on mainnet. Writes require Origin and session-bound CSRF. POSTs also
-require an 8–128 byte idempotency key, except test-only session bootstrap.
-Cookies are Secure, HttpOnly, and SameSite=Strict.
+Demo sessions are isolated test fixtures, not live identity. Live Testnet
+accounts are separate from wallet connection and own only their account-scoped
+records. Writes require Origin and session-bound CSRF. POSTs also require an
+8–128 byte idempotency key, except fixture bootstrap. Sessions expire after
+eight hours and `DELETE /api/session` revokes the current token server-side.
+Production cookies are Secure, HttpOnly, and SameSite=Strict; the loopback-only
+Testnet inspection origin uses the documented development exception.
 
 ## Milestone 3
 
@@ -65,7 +79,15 @@ acknowledgments invalid for current reliance. Signatures and idempotency snapsho
 remain historical records. A recovered receipt does not revive an invalidated
 acknowledgment.
 
-## API changes
+## Historical manual-transport research
+
+The following manual `zingo-cli` material is research infrastructure, not the
+current submission flow and not evidence of a live merchant product. It must
+not be presented as wallet ownership verification or independent settlement for
+an authenticated merchant. The current live Testnet configuration uses the
+broadcast-disabled `zingo` adapter.
+
+## Historical API notes
 
 No new HTTP routes; mock invoice APIs and behavior are preserved.
 

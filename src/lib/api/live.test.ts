@@ -58,4 +58,14 @@ describe("Live API contract", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ code: "NOT_FOUND", message: "Invoice not found" }, 404)));
     await expect(new LiveApiClient().getPayment("pay_missing001")).rejects.toMatchObject({ status: 404, body: { code: "NOT_FOUND" } });
   });
+  it("revokes the server session with its in-memory CSRF token", async () => {
+    const mock = new MockApiClient({ latencyMs: 0 });
+    const session = await mock.createDemoSession("customer");
+    const loggedOut = { authenticated: false, context: null, accountId: null, accountType: null, agentId: null, merchantId: null, csrfToken: null, expiresAt: null };
+    const fetcher = vi.fn().mockResolvedValueOnce(response(session)).mockResolvedValueOnce(response(loggedOut));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(new LiveApiClient().logout()).resolves.toEqual(loggedOut);
+    expect(fetcher.mock.calls[1][0]).toBe("/api/session");
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "DELETE", headers: { "X-CSRF-Token": session.csrfToken }, credentials: "include" });
+  });
 });

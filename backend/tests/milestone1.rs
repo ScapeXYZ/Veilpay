@@ -805,6 +805,35 @@ async fn expired_invoices_and_requests_cannot_reserve_budget() {
     assert!(violation(&r.body, "INVOICE_NOT_PAYABLE"));
     assert_eq!(f.usage(&a).await["reservedZat"], "0");
 }
+
+#[tokio::test]
+async fn expired_policy_rejects_new_requests_without_reserving_budget() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "100").await;
+    let i = f.invoice("60").await;
+    // This isolated database edit models wall-clock expiry. The API itself
+    // refuses writing an already-expired policy.
+    sqlx::query("UPDATE records SET body=json_set(body,'$.policy.expiresAt','2000-01-01T00:00:00Z') WHERE kind='agent' AND id=?")
+        .bind(a["id"].as_str().unwrap())
+        .execute(&f.app.pool)
+        .await
+        .unwrap();
+    let r = f.request(&a, &i, "60", "expired-policy").await;
+    assert_eq!(r.status, 201);
+    assert!(violation(&r.body, "POLICY_EXPIRED"));
+    assert_eq!(r.body["status"], "rejected");
+    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+}
+
+#[tokio::test]
+async fn logout_revokes_the_server_session_before_clearing_its_cookie() {
+    let f = Fixture::new().await;
+    let logout = call(&f.router, "DELETE", "session", Some(&f.customer), None, json!({})).await;
+    assert_eq!(logout.status, 200);
+    assert_eq!(logout.body["authenticated"], false);
+    assert!(logout.cookie.unwrap().contains("Max-Age=0"));
+    assert_eq!(call(&f.router, "GET", "agents", Some(&f.customer), None, json!({})).await.status, 401);
+}
 #[tokio::test]
 async fn idempotency_keys_are_required_and_scoped_to_operation_and_principal() {
     let f = Fixture::new().await;

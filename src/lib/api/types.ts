@@ -31,6 +31,8 @@ export interface ApiClient {
   registerAccount(body: z.infer<typeof AccountRegister>): Promise<Session>;
   createDemoSession(context: SessionContext): Promise<Session>;
   getSession(): Promise<Session>;
+  /** Revokes the current server session and clears its HttpOnly cookie. */
+  logout(): Promise<Session>;
   listAgents(): Promise<z.infer<typeof AgentList>>;
   createAgent(body: { name: string; policy: PolicyRules }, idempotencyKey: string): Promise<Agent>;
   getAgent(agentId: string): Promise<Agent>;

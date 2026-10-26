@@ -85,6 +85,8 @@ export const PolicyRules = z.object({
   totalBudgetZat: Zatoshi,
   allowedMerchantIds: z.array(z.string()).min(1),
   requestTtlSeconds: z.number().int().min(30).max(86400).optional(),
+  /** Once elapsed, the backend rejects every new request under this policy. */
+  expiresAt: dateTime.optional(),
 });
 
 export const Policy = PolicyRules.extend({
@@ -150,6 +152,7 @@ export const ViolationCode = z.enum([
   "AMOUNT_MISMATCH",
   "INVOICE_NOT_PAYABLE",
   "POLICY_VERSION_CHANGED",
+  "POLICY_EXPIRED",
 ]);
 
 export const Violation = z.object({

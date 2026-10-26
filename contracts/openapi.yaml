@@ -140,6 +140,26 @@ paths:
                 $ref: '#/components/schemas/Session'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - session
+      summary: Revoke the current authenticated session
+      description: Revokes the server-side bearer token and clears its HttpOnly cookie. Requires the current session and CSRF token.
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - session: []
   /agents:
     post:
       tags:
@@ -1014,6 +1034,10 @@ components:
           minimum: 30
           maximum: 86400
           default: 900
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional policy expiry. The backend rejects new requests after this time.
     Policy:
       allOf:
       - $ref: '#/components/schemas/PolicyRules'
@@ -1111,6 +1135,7 @@ components:
       - AMOUNT_MISMATCH
       - INVOICE_NOT_PAYABLE
       - POLICY_VERSION_CHANGED
+      - POLICY_EXPIRED
     Violation:
       type: object
       required:

@@ -54,7 +54,7 @@ test("live regtest/mock presents the redesigned application shell as a simulatio
   await primary.getByRole("link", { name: "Agent & rules" }).click();
   await expect(page.getByRole("heading", { name: "Spending rules" })).toBeVisible();
   await primary.getByRole("link", { name: "Payment requests" }).click();
-  await expect(page.getByRole("heading", { name: "Payments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payment requests" })).toBeVisible();
   await primary.getByRole("link", { name: "Merchant verification" }).click();
   await expect(page.getByRole("heading", { name: /merchant/i })).toBeVisible();
   await primary.getByRole("link", { name: "Safety & settings" }).click();

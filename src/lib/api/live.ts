@@ -7,7 +7,7 @@ import type { z } from "zod";
 import * as S from "@/lib/contract/schemas";
 import { ApiError, type ApiClient } from "./types";
 
-type Method = "GET" | "POST" | "PUT" | "PATCH";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export class LiveApiClient implements ApiClient {
   readonly mode = "live" as const;
@@ -75,6 +75,12 @@ export class LiveApiClient implements ApiClient {
   async getSession() {
     const s = await this.call(S.Session, "GET", "/session");
     this.csrfToken = s.csrfToken;
+    return s;
+  }
+
+  async logout() {
+    const s = await this.call(S.Session, "DELETE", "/session", { csrf: true });
+    this.csrfToken = null;
     return s;
   }
 
