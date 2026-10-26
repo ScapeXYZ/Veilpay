@@ -1,6 +1,6 @@
 # ZECATHON Testnet release readiness
 
-This document describes the submission build at `066791fbc37dd0ec5cb2aa182900274215ac9678`.
+This document describes the submission build at `5f0c0afaf86f537d0d63abc1af2d73bbd292a110`.
 It is a desktop-oriented, Testnet-only policy-control demonstration. It is not a
 wallet, payment processor, settlement verifier, or merchant-custody service.
 
