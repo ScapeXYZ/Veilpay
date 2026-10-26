@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNetworkMode } from "@/lib/api/data-source";
-import { errorText, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
+import { errorText, useApi, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
+import { networkModeOf } from "@/lib/mode";
 import { fmtTime } from "@/lib/present";
 import { MockBanner, SourceTag } from "./source";
 import { Badge, Button, ErrorBox, Skeleton } from "./ui";
@@ -246,19 +247,22 @@ export function PageHeader({ title, subtitle, right }: { title: string; subtitle
 }
 
 /**
- * Owner-only or merchant-only pages switch the demo session to the right role by themselves
- * (once, no loop), instead of parking the user behind a "switch context" button. The sessions stay
- * isolated server-side: the merchant session still cannot read the owner's data.
+ * Only isolated mock fixtures may switch customer/merchant demo context. A live
+ * workspace has one server-owned role, so a wrong-context view must never
+ * manufacture a fixture session or change authenticated identity.
  */
 export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"; children: ReactNode }) {
+  const api = useApi();
   const { data: s, isLoading, error, refetch } = useSession();
   const health = useHealth();
   const sw = useSwitchContext();
   const { mutate, isPending, isError } = sw;
-  const wrong = !!s && s.context !== ctx;
+  const fixtureBackend = health.data && networkModeOf(health.data, api.mode).kind === "mock";
+  const canSwitchFixture = api.mode === "mock" || fixtureBackend;
+  const wrong = s?.authenticated === true && s.context !== ctx;
   useEffect(() => {
-    if (wrong && !isPending && !isError) mutate(ctx);
-  }, [wrong, isPending, isError, mutate, ctx]);
+    if (wrong && canSwitchFixture && !isPending && !isError) mutate(ctx);
+  }, [wrong, canSwitchFixture, isPending, isError, mutate, ctx]);
   // In live mode the session query deliberately waits for the server-owned
   // network mode. Keep that bootstrap state visible and announced instead of
   // mistaking a disabled query for a missing session.
@@ -269,6 +273,8 @@ export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"
   </ErrorBox>;
   if (!s.authenticated) return <div data-testid="auth-required" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">Create a VeilPay testnet workspace on Overview before managing agents, policies, or payment requests. Connecting a wallet does not create backend ownership.</div>;
   const role = ctx === "customer" ? "owner" : "merchant";
+  if (wrong)
+    if (!canSwitchFixture) return <div data-testid="wrong-context" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">This workspace is not authorized for the {role} area. VeilPay keeps account roles and records separate; it will not switch identity or create a demo session.</div>;
   if (wrong)
     return (
       <div data-testid="wrong-context" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">

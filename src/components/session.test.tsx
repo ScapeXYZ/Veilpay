@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Providers } from "@/app/providers";
 import { LiveApiClient } from "@/lib/api/live";
 import { MockApiClient } from "@/lib/api/mock";
+import { seedHealth } from "@/lib/api/fixtures";
 import { RequireContext } from "./shell";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
@@ -30,5 +31,15 @@ describe("Session loading and recovery", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load your session");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Protected view")).toBeInTheDocument();
+  });
+  it("never creates a fixture session for an unauthenticated live Testnet visitor", async () => {
+    const api = new LiveApiClient();
+    vi.spyOn(api, "getHealth").mockResolvedValue({ ...seedHealth(), network: "testnet", mode: "disabled", wallet: "broadcast_disabled", walletBackend: "zingo" });
+    vi.spyOn(api, "getSession").mockResolvedValue({ authenticated: false, context: null, accountId: null, accountType: null, agentId: null, merchantId: null, csrfToken: null, expiresAt: null });
+    const createDemoSession = vi.spyOn(api, "createDemoSession");
+    render(<Providers client={api}><RequireContext ctx="customer">Protected view</RequireContext></Providers>);
+    expect(await screen.findByTestId("auth-required")).toBeInTheDocument();
+    await waitFor(() => expect(api.getSession).toHaveBeenCalled());
+    expect(createDemoSession).not.toHaveBeenCalled();
   });
 });

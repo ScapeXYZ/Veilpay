@@ -34,10 +34,21 @@ async fn call(
     key: Option<&str>,
     body: Value,
 ) -> Reply {
+    call_at(router, ORIGIN, method, path, session, key, body).await
+}
+async fn call_at(
+    router: &Router,
+    origin: &str,
+    method: &str,
+    path: &str,
+    session: Option<&Session>,
+    key: Option<&str>,
+    body: Value,
+) -> Reply {
     let mut req = Request::builder()
         .method(method)
         .uri(format!("/api/{path}"))
-        .header("origin", ORIGIN)
+        .header("origin", origin)
         .header("content-type", "application/json");
     if let Some(s) = session {
         req = req
@@ -624,7 +635,7 @@ async fn csrf_requires_origin_and_session_bound_token() {
     );
 }
 #[tokio::test]
-async fn session_rotation_invalidates_old_cookie_and_missing_session_is_unauthorized() {
+async fn session_rotation_invalidates_old_cookie_and_reports_unauthenticated_session() {
     let f = Fixture::new().await;
     assert_eq!(
         call(&f.router, "GET", "payments", None, None, json!({}))
@@ -645,8 +656,7 @@ async fn session_rotation_invalidates_old_cookie_and_missing_session_is_unauthor
         .status,
         200
     );
-    assert_eq!(
-        call(
+    let old = call(
             &f.router,
             "GET",
             "session",
@@ -654,10 +664,9 @@ async fn session_rotation_invalidates_old_cookie_and_missing_session_is_unauthor
             None,
             json!({})
         )
-        .await
-        .status,
-        401
-    );
+        .await;
+    assert_eq!(old.status, 200);
+    assert_eq!(old.body["authenticated"], false);
 }
 #[tokio::test]
 async fn validation_rejects_noninteger_money_and_invalid_policy() {
@@ -833,6 +842,108 @@ async fn logout_revokes_the_server_session_before_clearing_its_cookie() {
     assert_eq!(logout.body["authenticated"], false);
     assert!(logout.cookie.unwrap().contains("Max-Age=0"));
     assert_eq!(call(&f.router, "GET", "agents", Some(&f.customer), None, json!({})).await.status, 401);
+}
+
+async fn register_live(router: &Router, origin: &str, name: &str, account_type: &str) -> Session {
+    let registered = call_at(
+        router,
+        origin,
+        "POST",
+        "auth/register",
+        None,
+        None,
+        json!({"displayName":name,"accountType":account_type}),
+    )
+    .await;
+    assert_eq!(registered.status, 201, "{}", registered.body);
+    Session {
+        cookie: registered.cookie.unwrap().split(';').next().unwrap().into(),
+        csrf: registered.body["csrfToken"].as_str().unwrap().into(),
+    }
+}
+
+#[tokio::test]
+async fn live_testnet_allows_only_authenticated_workspace_records() {
+    const LIVE_ORIGIN: &str = "https://veilpay.example";
+    let app = App::open_with_wallet(
+        Config {
+            database_url: "sqlite::memory:".into(),
+            frontend_origin: LIVE_ORIGIN.into(),
+            network: "testnet".into(),
+        },
+        Some(Arc::new(ZingoWallet::new(Network::Testnet))),
+    )
+    .await
+    .unwrap();
+    let router = app.router();
+    let unauthenticated_session = call_at(&router, LIVE_ORIGIN, "GET", "session", None, None, json!({})).await;
+    assert_eq!(unauthenticated_session.status, 200);
+    assert_eq!(unauthenticated_session.body["authenticated"], false);
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "POST", "agents", None, Some("unauth-key"), json!({})).await.status,
+        401
+    );
+    let first = register_live(&router, LIVE_ORIGIN, "First", "individual").await;
+    let agent = call_at(
+        &router,
+        LIVE_ORIGIN,
+        "POST",
+        "agents",
+        Some(&first),
+        Some("live-agent-create"),
+        json!({"name":"Budget agent","policy":rules("100","500")}),
+    )
+    .await;
+    assert_eq!(agent.status, 201, "{}", agent.body);
+    let agent_id = agent.body["id"].as_str().unwrap();
+    let policy = call_at(
+        &router,
+        LIVE_ORIGIN,
+        "PUT",
+        &format!("agents/{agent_id}/policy"),
+        Some(&first),
+        None,
+        json!({"perTxLimitZat":"80","totalBudgetZat":"400","allowedMerchantIds":["merchant_a"],"requestTtlSeconds":900,"expiresAt":"2099-01-01T00:00:00Z","expectedVersion":1}),
+    )
+    .await;
+    assert_eq!(policy.status, 200, "{}", policy.body);
+    assert_eq!(policy.body["expiresAt"], "2099-01-01T00:00:00+00:00");
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "PATCH", &format!("agents/{agent_id}"), Some(&first), None, json!({"status":"paused"})).await.status,
+        200
+    );
+    let second = register_live(&router, LIVE_ORIGIN, "Second", "individual").await;
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "GET", &format!("agents/{agent_id}"), Some(&second), None, json!({})).await.status,
+        404
+    );
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "POST", "session/demo", None, None, json!({"context":"customer"})).await.status,
+        404
+    );
+    let merchant = register_live(&router, LIVE_ORIGIN, "Merchant", "merchant").await;
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "POST", "merchant/invoices", Some(&merchant), Some("invoice-blocked"), json!({"reference":"No invoice","amountZat":"1"})).await.status,
+        404
+    );
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "POST", "payments/request", Some(&first), Some("request-blocked"), json!({"agentId":agent_id,"invoiceId":"inv_none","amountZat":"1","reference":"No request"})).await.status,
+        404
+    );
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "POST", "payments/pay_none/execute", Some(&first), Some("execute-blocked"), json!({})).await.status,
+        404
+    );
+    assert_eq!(
+        call_at(&router, "https://evil.example", "PATCH", &format!("agents/{agent_id}"), Some(&first), None, json!({"status":"active"})).await.status,
+        403
+    );
+    let logout = call_at(&router, LIVE_ORIGIN, "DELETE", "session", Some(&first), None, json!({})).await;
+    assert_eq!(logout.status, 200);
+    assert_eq!(
+        call_at(&router, LIVE_ORIGIN, "GET", &format!("agents/{agent_id}"), Some(&first), None, json!({})).await.status,
+        401
+    );
 }
 #[tokio::test]
 async fn idempotency_keys_are_required_and_scoped_to_operation_and_principal() {
@@ -1309,33 +1420,26 @@ async fn cleanup_fixture(f: Fixture, path: std::path::PathBuf) {
 }
 
 #[tokio::test]
-async fn disabled_adapter_releases_once_and_does_not_fake_verification() {
+async fn disabled_adapter_exposes_workspace_only_and_never_creates_payment_records() {
     let (f, _, path) = adapter_fixture(Arc::new(ZingoWallet::new(Network::Testnet))).await;
-    let (a, p) = f.payment().await;
-    let first = f.execute(&p, "disabled-execute").await;
-    assert_eq!(first.status, 202);
-    assert_eq!(first.body["walletOperation"]["state"], "pending");
-    let saved = current_payment(&f, &p).await;
-    assert_eq!(saved["status"], "failed");
-    assert_eq!(saved["walletOperation"]["state"], "failed_definitive");
-    assert_eq!(saved["failure"]["code"], "WALLET_BROADCAST_DISABLED");
-    assert!(saved["txid"].is_null());
-    assert_eq!(f.usage(&a).await["reservedZat"], "0");
-    assert_eq!(f.usage(&a).await["spentZat"], "0");
-    assert_eq!(f.execute(&p, "disabled-execute").await.raw, first.raw);
-    f.app.reconcile_wallet_operations().await.unwrap();
-    assert_eq!(f.usage(&a).await["reservedZat"], "0");
-    let verification = call(
-        &f.router,
-        "GET",
-        &format!("payments/{}/verification", p["id"].as_str().unwrap()),
-        Some(&f.merchant),
-        None,
-        json!({}),
-    )
-    .await;
-    assert_eq!(verification.status, 409);
-    assert_eq!(verification.body["code"], "VERIFICATION_UNAVAILABLE");
+    let agent = f.agent("100", "100").await;
+    assert_eq!(
+        call(&f.router, "PATCH", &format!("agents/{}", agent["id"].as_str().unwrap()), Some(&f.customer), None, json!({"status":"paused"})).await.status,
+        200
+    );
+    assert_eq!(
+        call(&f.router, "POST", "merchant/invoices", Some(&f.merchant), Some("disabled-invoice"), json!({"reference":"never payable","amountZat":"1"})).await.status,
+        404
+    );
+    assert_eq!(
+        call(&f.router, "POST", "payments/request", Some(&f.customer), Some("disabled-request"), json!({"agentId":agent["id"],"invoiceId":"inv_none","amountZat":"1","reference":"never payable"})).await.status,
+        404
+    );
+    assert_eq!(
+        call(&f.router, "POST", "payments/pay_none/execute", Some(&f.customer), Some("disabled-execute"), json!({})).await.status,
+        404
+    );
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM records WHERE kind IN ('invoice','payment')").fetch_one(&f.app.pool).await.unwrap(), 0);
     cleanup_fixture(f, path).await;
 }
 
@@ -1579,14 +1683,19 @@ async fn mainnet_gate_blocks_even_an_injected_adapter() {
             csrf: "merchant".into(),
         },
     };
-    let (a, p) = executable_payment(&f).await;
-    f.execute(&p, "mainnet-execute").await;
+    for (method, path, key) in [
+        ("POST", "agents", Some("mainnet-agent")),
+        ("POST", "merchant/invoices", Some("mainnet-invoice")),
+        ("POST", "payments/request", Some("mainnet-request")),
+        ("POST", "payments/pay_none/execute", Some("mainnet-execute")),
+        ("PATCH", "agents/agt_none", None),
+        ("PUT", "agents/agt_none/policy", None),
+        ("DELETE", "session", None),
+    ] {
+        assert_eq!(call(&f.router, method, path, Some(&f.customer), key, json!({})).await.status, 404);
+    }
     assert_eq!(adapter.submits.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        current_payment(&f, &p).await["failure"]["code"],
-        "WALLET_BROADCAST_DISABLED"
-    );
-    assert_eq!(f.usage(&a).await["reservedZat"], "0");
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM records").fetch_one(&f.app.pool).await.unwrap(), 0);
     let health = call(&f.router, "GET", "health", None, None, json!({})).await;
     assert_eq!(health.body["mode"], "disabled");
     assert_eq!(health.body["wallet"], "broadcast_disabled");

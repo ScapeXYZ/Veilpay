@@ -425,6 +425,22 @@ fn clear_session_cookie(config: &Config) -> String {
         "__Host-veilpay_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0".into()
     }
 }
+/// The only live-Testnet mutations this release supports. This is deliberately
+/// independent of any browser mode flag: the backend knows both its configured
+/// network and whether its adapter is the broadcast-disabled observer.
+fn workspace_write(parts: &[&str], method: &Method) -> bool {
+    matches!(
+        (method.as_str(), parts),
+        ("POST", ["auth", "register"])
+            | ("DELETE", ["session"])
+            | ("POST", ["agents"])
+            | ("PATCH", ["agents", _])
+            | ("PUT", ["agents", _, "policy"])
+    )
+}
+fn public_origin(config: &Config) -> bool {
+    config.frontend_origin.starts_with("https://")
+}
 async fn handle(
     State(app): State<App>,
     peer: Option<Extension<ConnectInfo<SocketAddr>>>,
@@ -490,6 +506,22 @@ async fn dispatch(
         }
         return Ok(reply(200, &app.mainnet_read_only_snapshot().await?, false));
     }
+    // Mainnet is read-only even if the backend is reached without the Next.js
+    // proxy. A production Testnet origin has the same narrow workspace-only
+    // surface, and the broadcast-disabled Testnet adapter applies that limit in
+    // local inspection too. This keeps invoice/payment/execution paths closed
+    // at both public boundaries without trusting a browser-provided network.
+    let disabled_testnet = app.config.network == "testnet"
+        && app
+            .wallet
+            .as_ref()
+            .is_some_and(|wallet| wallet.workspace_only());
+    if write
+        && (app.config.network == "mainnet"
+            || ((disabled_testnet || public_origin(&app.config)) && !workspace_write(&parts, &method)))
+    {
+        return Err(ApiError(404, "NOT_FOUND"));
+    }
     if write && h.get("origin").and_then(|x| x.to_str().ok()) != Some(&app.config.frontend_origin) {
         return Err(ApiError(403, "CSRF_FAILED"));
     }
@@ -520,7 +552,16 @@ async fn dispatch(
         return Ok(r);
     }
     if path == "session/demo" && method == Method::POST {
-        if app.config.network == "mainnet" || (app.wallet.is_some() && app.config.frontend_origin == "http://localhost:3200") {
+        // The broadcast-disabled live Testnet observer never exposes a demo
+        // identity endpoint. Historical CLI fixtures still run only on local
+        // non-public origins; the public-origin write gate above blocks them
+        // before this branch.
+        if app.config.network == "mainnet"
+            || app
+                .wallet
+                .as_ref()
+                .is_some_and(|wallet| wallet.workspace_only())
+        {
             return Err(ApiError(404, "NOT_FOUND"));
         }
         let role = text(&body, "context", 8)?;
@@ -567,9 +608,16 @@ async fn dispatch(
             .bind(&cookie).bind(now()).fetch_optional(&mut *tx).await?
     };
     if path == "session" && method == Method::GET && session.is_none() {
-        if app.config.frontend_origin != "http://localhost:3200" {
+        // The isolated wallet-less regtest harness deliberately uses a 401 as
+        // its explicit fixture-bootstrap signal. Live Testnet and mainnet
+        // return the harmless state shape below instead, so production browser
+        // first load does not manufacture a console error or a demo session.
+        if app.config.network == "regtest" && app.wallet.is_none() {
             return Err(ApiError(401, "UNAUTHENTICATED"));
         }
+        // Session discovery is a non-sensitive state probe. Returning an
+        // explicit unauthenticated shape avoids a browser-console 401 during
+        // first load while every protected record route still fails closed.
         return Ok(reply(200, &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}), false));
     }
     let session = session.ok_or(ApiError(401, "UNAUTHENTICATED"))?;
