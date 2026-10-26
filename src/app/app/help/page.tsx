@@ -5,8 +5,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { MockControlsPanel } from "@/components/mock-controls";
 import { useOnboarding } from "@/lib/onboarding";
-import { isMockClient } from "@/lib/api";
-import { useApi } from "@/lib/api/hooks";
 import { PageHeader } from "@/components/shell";
 import { GLOSSARY } from "@/components/term";
 import { Card } from "@/components/ui";
@@ -28,14 +26,14 @@ function Answer({ icon, q, children }: { icon: ReactNode; q: string; children: R
 export default function HelpPage() {
   const tour = useOnboarding();
   const mode = useNetworkMode();
-  const api = useApi();
-  const mock = mode.kind === "mock" && isMockClient(api);
+  const mock = mode.kind === "mock";
+  const testnet = mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled";
   if (mode.kind === "mainnet_readonly" || mode.kind === "unknown") {
     return <><PageHeader title={mode.kind === "unknown" ? "Server status unavailable" : "Mainnet safety"} subtitle={mode.kind === "unknown" ? "Wallet observation remains local and read-only. Server-backed features are disabled." : "VeilPay observes mainnet wallet data only. It does not create payment requests, invoices, or transactions."} /><MainnetReadOnlyNotice area="Interactive demos" unknown={mode.kind === "unknown"} /></>;
   }
   return (
     <>
-      <PageHeader title={mock ? "Help & demo" : "Help"} subtitle={mock ? "What VeilPay does, in plain words, a tour of the app and a practice run you can replay." : "What VeilPay does, in plain words, a tour of the app, and a separate practice run you can replay."} />
+      <PageHeader title={mock ? "Help & demo" : "Safety & settings"} subtitle={mock ? "What VeilPay does, in plain words, a tour of the app and a practice run you can replay." : "How VeilPay keeps wallet observation, agent policies, payment requests, and settlement evidence separate."} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card testId="help-intro">
@@ -43,19 +41,19 @@ export default function HelpPage() {
           <ol className="mt-3 space-y-2.5 text-[15px] text-zinc-300">
             <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">1</span>You set spending rules for your AI agent: a max per payment, a total budget, and which merchants it may pay.</li>
             <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">2</span>When the agent wants to pay an invoice, VeilPay checks the rules. Over a limit? Blocked, with the exact reason, and no money moves.</li>
-            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">3</span>Approved payments are meant to be sent as private (shielded) Zcash payments and count as paid only after network confirmations.{mock ? " In this demo, sending and confirmations are simulated." : " On the main network VeilPay is read-only and sends nothing."}</li>
+            <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">3</span>Approved payments are intended to be shielded Zcash payments and count as paid only after actual confirmation evidence.{mock ? " In this demo, sending and confirmations are simulated." : testnet ? " This release does not request a Noir Wallet signature or send from the browser." : " On the main network VeilPay is read-only and sends nothing."}</li>
             <li className="flex gap-3"><span className="font-semibold tabular-nums text-accent-300">4</span>The merchant checks on its side that its invoice was paid. The design keeps the amount and who paid out of public view;{mock ? " this demo does not prove that on a real network." : " VeilPay does not verify that on the network yet."}</li>
           </ol>
         </Card>
         <div className="flex flex-col gap-5">
-          <Card testId="help-demo" className="flex flex-col">
+          {mock && <Card testId="help-demo" className="flex flex-col">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-50"><PlayCircle size={16} className="text-accent-300" aria-hidden /> {mock ? "Interactive demo" : "Practice demo (separate from your wallet)"}</div>
             <p className="mt-2 text-sm text-zinc-400">A step-by-step simulation in your browser: a blocked overspend, an allowed payment, simulated confirmations and the merchant check. It is not a video, nothing real moves, and you can replay it any time.</p>
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-fuchsia-300"><FlaskConical size={12} aria-hidden /> Simulation only</p>
             <Link href="/demo" data-testid="help-start-demo" className="mt-4 inline-flex items-center justify-center gap-2 self-start rounded-lg bg-accent-400 px-3.5 py-2 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
               Try interactive demo <ArrowRight size={14} aria-hidden />
             </Link>
-          </Card>
+          </Card>}
           <Card testId="help-tour" className="flex flex-col">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-50"><Compass size={16} className="text-accent-300" aria-hidden /> Quick tour</div>
             <p className="mt-2 text-sm text-zinc-400">A short guided walk through Spending rules, Payments, Merchant, Activity and Privacy. Skip it whenever you like.</p>

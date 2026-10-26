@@ -10,7 +10,7 @@
  * - Wrong or unconfirmed network fails closed: accounts and balances are dropped.
  * - Any lock, disconnect or account change drops balances; nothing is reused.
  */
-import type { NoirAccount, NoirBalance } from "@/lib/noir-wallet";
+import { noirNetworkOfAddress, type NoirAccount, type NoirBalance } from "@/lib/noir-wallet";
 import type { NetworkModeKind } from "@/lib/mode";
 
 export type WalletNetwork = "mainnet" | "testnet";
@@ -76,17 +76,13 @@ const cleared = (status: WalletStatus, detectedNetwork: DetectedNetwork | null =
 /** Which wallet network the VeilPay server mode expects; null = do not offer a wallet. */
 export function expectedWalletNetwork(kind: NetworkModeKind): WalletNetwork | null {
   if (kind === "mainnet_readonly") return "mainnet";
-  if (kind === "testnet" || kind === "testnet_manual") return "testnet";
+  if (kind === "testnet" || kind === "testnet_manual" || kind === "disabled") return "testnet";
   return null;
 }
 
 /** Network from a Zcash address prefix (HRP). The SDK has no documented network getter. */
 export function networkOfAddress(address: string | undefined | null): WalletNetwork | null {
-  if (!address) return null;
-  const a = address.trim().toLowerCase();
-  if (a.startsWith("utest1") || a.startsWith("ztestsapling1") || a.startsWith("tm") || a.startsWith("t2")) return "testnet";
-  if (a.startsWith("u1") || a.startsWith("zs1") || a.startsWith("t1") || a.startsWith("t3")) return "mainnet";
-  return null;
+  return noirNetworkOfAddress(address);
 }
 
 export function networkOfAccount(account: NoirAccount): DetectedNetwork {

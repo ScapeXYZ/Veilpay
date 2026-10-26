@@ -28,7 +28,7 @@ async function simulatedPayment(page: Page): Promise<string> {
   if (await create.isVisible()) await create.click();
   await expect(summary).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: /payments/i }).click();
+  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Payment requests" }).click();
   await page.getByTestId("new-payment").click();
   const request = page.getByTestId("request-new");
   await request.getByLabel("Invoice ID").fill(invoice);

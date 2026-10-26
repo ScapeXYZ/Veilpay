@@ -35,7 +35,7 @@ describe("first-time onboarding", () => {
     expect(screen.queryByTestId("onboarding")).toBeNull();
   });
 
-  it("walks Spending rules, Payments, Merchant, Activity/Privacy with Next and Back", () => {
+  it("walks the wallet, agent, policy, request, authorization, merchant, and activity journey", () => {
     mount();
     expect(screen.getByTestId("onboarding-back")).toBeDisabled();
     const hrefs: string[] = [];
@@ -43,7 +43,7 @@ describe("first-time onboarding", () => {
       fireEvent.click(screen.getByTestId("onboarding-next"));
       hrefs.push(nav.push.mock.calls.at(-1)![0]);
     }
-    expect(hrefs).toEqual(["/app/spending-rules", "/app/payments", "/app/merchant", "/app/activity"]);
+    expect(hrefs).toEqual(["/app/wallet", "/app/spending-rules", "/app/spending-rules", "/app/payments", "/app/payments", "/app/merchant", "/app/activity"]);
     expect(screen.getByTestId("onboarding")).toHaveAttribute("data-step", "activity");
     fireEvent.click(screen.getByTestId("onboarding-back"));
     expect(screen.getByTestId("onboarding")).toHaveAttribute("data-step", "merchant");

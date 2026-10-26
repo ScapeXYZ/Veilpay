@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Ban, CalendarClock, Eye, PlayCircle, ReceiptText, RotateCcw, Wallet, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, CalendarClock, Eye, PlayCircle, ReceiptText, RotateCcw, ShieldCheck, Wallet, Wrench } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PaymentBadge } from "@/components/payment";
@@ -16,6 +16,7 @@ import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
 import { pctZat } from "@/lib/zat";
 import { Term } from "@/components/term";
 import { NoirWalletCard } from "@/components/noir-wallet-card";
+import { useOnboarding } from "@/lib/onboarding";
 
 function Metric({ label, children, hint, testId, icon }: { label: ReactNode; children: ReactNode; hint?: ReactNode; testId?: string; icon?: ReactNode }) {
   return (
@@ -71,15 +72,43 @@ function attentionOf(p: Payment): { icon: ReactNode; text: string } | null {
   return null;
 }
 
+function ProductJourney() {
+  const tour = useOnboarding();
+  return (
+    <Card testId="product-journey" className="!p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-300">Policy-controlled payments</p>
+          <h2 className="mt-1 font-display text-2xl text-zinc-50">Give agents permission to pay, not permission to overspend.</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">Connect a wallet for observation, configure an agent and enforceable limits, then evaluate payment requests. Wallet authorization and settlement evidence remain separate steps; this release does not sign, send, or broadcast.</p>
+        </div>
+        <button type="button" onClick={tour.start} data-testid="start-tour" className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-zinc-800 px-3.5 py-2 text-sm font-medium text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
+          <ShieldCheck size={15} aria-hidden /> Start tour
+        </button>
+      </div>
+      <ol className="mt-5 grid grid-cols-1 gap-2 border-t border-zinc-800 pt-4 text-xs text-zinc-400 md:grid-cols-5" aria-label="VeilPay payment journey">
+        {[
+          "Observe wallet",
+          "Configure agent",
+          "Enforce rules",
+          "Evaluate request",
+          "Verify settlement",
+        ].map((step, index) => <li key={step} className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-zinc-800 font-mono text-[11px] text-zinc-300">{index + 1}</span>{step}</li>)}
+      </ol>
+    </Card>
+  );
+}
+
 function Dashboard() {
+  const mode = useNetworkMode();
   const { agentId } = useSelectedAgent();
   const { data: a, isLoading, error } = useAgent(agentId);
   const { data: list } = usePayments();
   const { data: h } = useHealth();
   if (error) return <ErrorBox>{errorText(error)}</ErrorBox>;
-  // A live demo session deliberately starts without an agent. Reuse the existing,
-  // backend-authoritative setup flow rather than leaving the overview in a skeleton.
-  if (!agentId) return <><NoirWalletCard /><AgentSummary /></>;
+  // A workspace can legitimately have no configured agent. Keep that state
+  // explicit rather than supplying a starter policy, budget, or merchant.
+  if (!agentId) return <><ProductJourney /><NoirWalletCard /><AgentSummary /></>;
   if (isLoading || !a) return <Skeleton className="h-72" />;
   const u = a.usage;
   const total = a.policy.totalBudgetZat;
@@ -89,24 +118,25 @@ function Dashboard() {
   const attention = items.map((p) => ({ p, a: attentionOf(p) })).filter((x) => x.a).slice(0, 5);
   return (
     <>
+      <ProductJourney />
       <ModeCard />
 
       <NoirWalletCard />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Wallet balance" icon={<Wallet size={12} aria-hidden />} testId="metric-wallet"
-          hint="Not shown. The wallet is shared, so its balance is not this agent's money.">
-          <span className="text-zinc-400" data-testid="wallet-unavailable">Unavailable</span>
-        </Metric>
-        <Metric label="Left to spend" testId="metric-remaining" hint={<>budget remaining under VeilPay rules, of a <Zec zat={total} /> total</>}>
-          <Zec zat={u.remainingZat} testId="remaining" />
-        </Metric>
-        <Metric label={<Term k="reserved">Set aside</Term>} testId="metric-reserved" hint={`${u.pendingCount} approved, not sent yet`}>
-          <Zec zat={u.reservedZat} />
-        </Metric>
-        <Metric label="Spent" testId="metric-spent" hint={`${u.approvedCount} approved · ${u.rejectedCount} blocked by rules`}>
-          <Zec zat={u.spentZat} />
-        </Metric>
+        {mode.kind === "mock" ? <>
+          <Metric label="Wallet balance" icon={<Wallet size={12} aria-hidden />} testId="metric-wallet" hint="Not shown. The wallet is shared, so its balance is not this agent's money.">
+            <span className="text-zinc-400" data-testid="wallet-unavailable">Unavailable</span>
+          </Metric>
+          <Metric label="Left to spend" testId="metric-remaining" hint={<>budget remaining under VeilPay rules, of a <Zec zat={total} /> total</>}><Zec zat={u.remainingZat} testId="remaining" /></Metric>
+          <Metric label={<Term k="reserved">Set aside</Term>} testId="metric-reserved" hint={`${u.pendingCount} approved, not sent yet`}><Zec zat={u.reservedZat} /></Metric>
+          <Metric label="Spent" testId="metric-spent" hint={`${u.approvedCount} approved · ${u.rejectedCount} blocked by rules`}><Zec zat={u.spentZat} /></Metric>
+        </> : <>
+          <Metric label="Configured agent" icon={<Wallet size={12} aria-hidden />} testId="metric-agent" hint="Selected backend record only; multi-agent listing is not available yet."><span className="tabular-nums text-zinc-100">1</span></Metric>
+          <Metric label="Policy status" testId="metric-policy" hint={`Policy version ${a.policy.version}; enforcement is server-reported.`}><span className="capitalize text-zinc-100">{a.status}</span></Metric>
+          <Metric label="Approved requests" testId="metric-approved" hint="Recorded by the VeilPay backend; not a settlement total."><span className="tabular-nums text-zinc-100">{u.approvedCount}</span></Metric>
+          <Metric label="Rejected requests" testId="metric-rejected" hint="Blocked by the policy engine before execution."><span className="tabular-nums text-zinc-100">{u.rejectedCount}</span></Metric>
+        </>}
       </div>
 
       <SpendingChart agentId={agentId} />
@@ -209,7 +239,7 @@ function Overview() {
 export default function DashboardPage() {
   return (
     <>
-      <PageHeader title="Overview" subtitle="Wallet-reported mainnet balances and activity, kept separate from VeilPay agent spending and settlement evidence." />
+      <PageHeader title="Overview" subtitle="Wallet-reported balances and activity stay separate from VeilPay policy decisions, agent budgets, and independently verified settlement evidence." />
       <Overview />
     </>
   );

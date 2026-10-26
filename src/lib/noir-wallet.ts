@@ -21,6 +21,7 @@ export type NoirAccount = ZcashAccount;
 export type NoirBalance = ZcashBalanceResult;
 export type NoirTransaction = TransactionHistoryEntry;
 export type NoirProvider = NoirWalletProvider;
+export type NoirWalletNetwork = "mainnet" | "testnet";
 
 /**
  * Noir Wallet injects asynchronously and emits `noirwallet#initialized` when
@@ -103,12 +104,27 @@ export class NoirWalletAdapter {
 }
 
 /**
- * Noir Wallet ships mainnet and testnet as separate extensions. The SDK has no
- * network query, so refuse to present a connection as mainnet unless its
- * returned address pair has mainnet prefixes. This is an intentionally narrow
- * guard, not a full address validator.
+ * Noir Wallet ships mainnet and testnet as separate extensions. Although the
+ * SDK documents a `chainChanged` event, it does not expose a synchronous
+ * network getter for an account. Treat the returned address pair as the
+ * network evidence and fail closed for unknown or mixed pairs. This is an
+ * intentionally narrow prefix guard, not a full address validator.
  */
-export function isMainnetNoirAccount(account: NoirAccount): boolean {
-  const { transparent, shielded } = account.addresses;
-  return /^(t1|t3)/.test(transparent) && /^(u1|zs)/.test(shielded);
+export function noirNetworkOfAddress(address: string | null | undefined): NoirWalletNetwork | null {
+  const value = address?.trim().toLowerCase() ?? "";
+  if (/^(u1|zs1|t1|t3)/.test(value)) return "mainnet";
+  if (/^(utest1|ztestsapling1|tm|t2)/.test(value)) return "testnet";
+  return null;
+}
+
+export function noirNetworkOfAccount(account: NoirAccount): NoirWalletNetwork | null {
+  const networks = [
+    noirNetworkOfAddress(account.addresses.transparent),
+    noirNetworkOfAddress(account.addresses.shielded),
+  ];
+  return networks[0] && networks[0] === networks[1] ? networks[0] : null;
+}
+
+export function areNoirAccountsOnNetwork(accounts: NoirAccount[], expected: NoirWalletNetwork): boolean {
+  return accounts.length > 0 && accounts.every((account) => noirNetworkOfAccount(account) === expected);
 }

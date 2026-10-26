@@ -4,12 +4,27 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { newIdempotencyKey } from "@/lib/api/types";
 import { Pause, Play } from "lucide-react";
+import { useNetworkMode } from "@/lib/api/data-source";
 import { errorText, useApi, useSelectedAgent, useAgent, useSession, useSetAgentStatus } from "@/lib/api/hooks";
 import { pctZat } from "@/lib/zat";
 import { SourceTag } from "./source";
 import { Badge, Button, Card, ErrorBox, Meter, Skeleton, Zec } from "./ui";
 
 function AgentSetup() {
+  const mode = useNetworkMode();
+  if (mode.kind !== "mock") {
+    return (
+      <Card title="No payment agent configured" testId="agent-setup">
+        <p className="text-sm text-zinc-400">No agent record is available in this workspace. VeilPay will not create a default agent, budget, merchant list, or payment history for you.</p>
+        <p className="mt-3 text-xs text-zinc-500">Agent creation and account ownership need a reviewed testnet identity boundary before this control can be offered.</p>
+      </Card>
+    );
+  }
+  return <MockAgentSetup />;
+}
+
+/** Isolated fixture-only setup. Live workspaces never receive preset policy values. */
+function MockAgentSetup() {
   const api = useApi();
   const { setAgentId } = useSelectedAgent();
   const [existing, setExisting] = useState("");
