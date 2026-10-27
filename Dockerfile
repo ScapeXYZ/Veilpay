@@ -34,6 +34,7 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=10000 \
+    HOSTNAME=0.0.0.0 \
     BIND_ADDR=127.0.0.1:4100 \
     DATABASE_URL=sqlite:///tmp/veilpay/veilpay-testnet.db \
     VEILPAY_PUBLIC_DEPLOYMENT=1 \
