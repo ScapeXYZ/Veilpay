@@ -5,7 +5,7 @@
  */
 import type { z } from "zod";
 import * as S from "@/lib/contract/schemas";
-import { ApiError, type ApiClient } from "./types";
+import { ApiError, newIdempotencyKey, type ApiClient } from "./types";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -100,6 +100,12 @@ export class LiveApiClient implements ApiClient {
   getAgent(agentId: string) {
     return this.call(S.Agent, "GET", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}`);
   }
+
+  listAgentCredentials(agentId: string) { return this.call(S.AgentCredentialList, "GET", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials`); }
+  createAgentCredential(agentId: string) { return this.call(S.AgentCredentialIssued, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
+  async revokeAgentCredential(agentId: string, credentialId: string) { await this.call(S.AgentCredentialRevoked, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials/${encodeURIComponent(credentialId)}/revoke`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
+  rotateAgentCredential(agentId: string, credentialId: string) { return this.call(S.AgentCredentialIssued, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials/${encodeURIComponent(credentialId)}/rotate`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
+  deleteAgentIntegrationActivity(agentId: string) { return this.call(S.AgentIntegrationActivityDeletion, "DELETE", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/integrations/activity`, { csrf: true }); }
 
   setAgentStatus(agentId: string, status: S.AgentStatus) {
     return this.call(S.Agent, "PATCH", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}`, {

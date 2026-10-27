@@ -86,7 +86,10 @@ type Result<T> = std::result::Result<T, ApiError>;
 struct ApiError(u16, &'static str);
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
-        eprintln!("database error: {e}");
+        // Never log SQL, bind values, credentials, wallet data, or request
+        // bodies. Operators get a stable, allowlisted event label only.
+        let _ = e;
+        eprintln!("veilpay_error component=database code=INTERNAL");
         Self(500, "INTERNAL")
     }
 }
@@ -479,7 +482,199 @@ fn workspace_write(parts: &[&str], method: &Method) -> bool {
             | ("POST", ["agents"])
             | ("PATCH", ["agents", _])
             | ("PUT", ["agents", _, "policy"])
+            | ("POST", ["agents", _, "credentials"])
+            | ("POST", ["agents", _, "credentials", _, "revoke"])
+            | ("POST", ["agents", _, "credentials", _, "rotate"])
+            | ("DELETE", ["agents", _, "integrations", "activity"])
+            | ("POST", ["v1", "agent", "payment-evaluations"])
     )
+}
+fn agent_token() -> String {
+    // uuid::Uuid::new_v4 uses the operating system CSPRNG. Two UUID values
+    // provide 244 random bits after version/variant bits and are shown once.
+    format!(
+        "vpa_{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+fn bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+}
+async fn credential_metadata(
+    c: &mut SqliteConnection,
+    owner: &str,
+    agent: &str,
+) -> Result<Vec<Value>> {
+    let rows = sqlx::query("SELECT id,token_hint,created_at,expires_at,revoked_at,last_used_at FROM agent_credentials WHERE owner=? AND agent_id=? ORDER BY created_at DESC")
+        .bind(owner).bind(agent).fetch_all(c).await?;
+    Ok(rows.into_iter().map(|r| json!({"id":r.get::<String,_>(0),"hint":r.get::<String,_>(1),"createdAt":r.get::<String,_>(2),"expiresAt":r.get::<String,_>(3),"revokedAt":r.get::<Option<String>,_>(4),"lastUsedAt":r.get::<Option<String>,_>(5)})).collect())
+}
+async fn create_credential(
+    c: &mut SqliteConnection,
+    owner: &str,
+    agent: &str,
+    body: &Value,
+) -> Result<Value> {
+    owned(c, "agent", agent, owner).await?;
+    let expiry = body
+        .get("expiresAt")
+        .and_then(Value::as_str)
+        .map(date)
+        .transpose()?
+        .unwrap_or(Utc::now() + Duration::days(90));
+    if expiry <= Utc::now() {
+        return Err(invalid());
+    }
+    let secret = agent_token();
+    let cid = id("cred");
+    let hint = format!("{}…", &secret[..12]);
+    sqlx::query("INSERT INTO agent_credentials(id,agent_id,owner,token_hash,token_hint,created_at,expires_at,revoked_at,last_used_at) VALUES(?,?,?,?,?,?,?,NULL,NULL)")
+        .bind(&cid).bind(agent).bind(owner).bind(token_hash(&secret)).bind(&hint).bind(now()).bind(expiry.to_rfc3339()).execute(c).await?;
+    Ok(json!({"credential":{"id":cid,"hint":hint,"expiresAt":expiry.to_rfc3339()},"token":secret}))
+}
+async fn external_evaluation(
+    app: &App,
+    c: &mut SqliteConnection,
+    h: &HeaderMap,
+    body: &Value,
+    key: &str,
+) -> Result<(u16, Value, bool)> {
+    if app.config.network != "testnet" {
+        return Err(ApiError(404, "NOT_FOUND"));
+    }
+    let raw = bearer(h)
+        .filter(|v| v.starts_with("vpa_") && v.len() == 68)
+        .ok_or(ApiError(401, "UNAUTHENTICATED"))?;
+    let row = sqlx::query(
+        "SELECT id,agent_id,owner,expires_at,revoked_at FROM agent_credentials WHERE token_hash=?",
+    )
+    .bind(token_hash(raw))
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(ApiError(401, "UNAUTHENTICATED"))?;
+    let cid: String = row.get(0);
+    let aid: String = row.get(1);
+    let owner: String = row.get(2);
+    if row.get::<Option<String>, _>(4).is_some() || date(&row.get::<String, _>(3))? <= Utc::now() {
+        return Err(ApiError(401, "UNAUTHENTICATED"));
+    }
+    let stamp = Utc::now().timestamp();
+    sqlx::query("INSERT INTO agent_credential_rate_limits VALUES(?,?,1) ON CONFLICT(credential_id) DO UPDATE SET count=CASE WHEN window_start<? THEN 1 ELSE count+1 END, window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END")
+        .bind(&cid).bind(stamp).bind(stamp-60).bind(stamp-60).execute(&mut *c).await?;
+    let count: i64 =
+        sqlx::query_scalar("SELECT count FROM agent_credential_rate_limits WHERE credential_id=?")
+            .bind(&cid)
+            .fetch_one(&mut *c)
+            .await?;
+    if count > 60 {
+        return Err(ApiError(429, "RATE_LIMITED"));
+    }
+    let object = body.as_object().ok_or_else(invalid)?;
+    if object.len() != 3
+        || !["merchantId", "reference", "amountZat"]
+            .iter()
+            .all(|k| object.contains_key(*k))
+    {
+        return Err(invalid());
+    }
+    let merchant = text(body, "merchantId", 64)?;
+    let reference = text(body, "reference", 64)?;
+    let amount = zat(body, "amountZat")?;
+    if merchant.trim().is_empty() || reference.trim().is_empty() || amount == 0 {
+        return Err(invalid());
+    }
+    let operation = "POST v1/agent/payment-evaluations";
+    let payload = token_hash(&body.to_string());
+    if let Some(r) = sqlx::query(
+        "SELECT payload,status,body FROM idempotency WHERE principal=? AND operation=? AND key=?",
+    )
+    .bind(&cid)
+    .bind(operation)
+    .bind(key)
+    .fetch_optional(&mut *c)
+    .await?
+    {
+        if r.get::<String, _>(0) != payload {
+            return Err(ApiError(409, "IDEMPOTENCY_MISMATCH"));
+        }
+        return Ok((
+            r.get::<i64, _>(1) as u16,
+            serde_json::from_str(&r.get::<String, _>(2)).map_err(|_| ApiError(500, "INTERNAL"))?,
+            true,
+        ));
+    }
+    let a = owned(c, "agent", &aid, &owner).await?;
+    let mut violations = Vec::new();
+    if a["status"] == "paused" {
+        violations.push(json!({"code":"AGENT_PAUSED","message":"Agent is paused."}));
+    }
+    let policy = &a["policy"];
+    if policy
+        .get("expiresAt")
+        .and_then(Value::as_str)
+        .map(date)
+        .transpose()?
+        .is_some_and(|d| d <= Utc::now())
+    {
+        violations.push(json!({"code":"POLICY_EXPIRED","message":"The policy has expired."}));
+    }
+    if amount > zat(policy, "perTxLimitZat")? {
+        violations
+            .push(json!({"code":"CAP_EXCEEDED","message":"Amount exceeds the per-payment limit."}));
+    }
+    if zat(&a["usage"], "spentZat")? + zat(&a["usage"], "reservedZat")? + amount
+        > zat(policy, "totalBudgetZat")?
+    {
+        violations.push(json!({"code":"BUDGET_EXCEEDED","message":"Amount exceeds the remaining policy budget."}));
+    }
+    if !policy["allowedMerchantIds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m.as_str() == Some(merchant))
+    {
+        violations.push(json!({"code":"MERCHANT_NOT_ALLOWED","message":"Merchant is not on this agent's allowlist."}));
+    }
+    let allowed = violations.is_empty();
+    // A credential holder needs to know whether to proceed, but not policy
+    // thresholds, remaining budget, allowlist membership, or internal IDs.
+    let reason = if allowed {
+        "ALLOWED"
+    } else if a["status"] == "paused" {
+        "AGENT_PAUSED"
+    } else {
+        "POLICY_DENIED"
+    };
+    let result = json!({"requestId":id("eval"),"allowed":allowed,"reasonCode":reason,"explanation":if allowed {"Policy permits this proposal. No payment, reservation, wallet authorization, signing, or broadcast occurred."} else {"This proposal does not satisfy the active policy."},"policyVersion":policy["version"]});
+    put(
+        c,
+        "policy_evaluation",
+        result["requestId"].as_str().unwrap(),
+        &owner,
+        &json!({"agentId":aid,"request":body,"result":result,"credentialId":cid,"createdAt":now()}),
+    )
+    .await?;
+    sqlx::query("UPDATE agent_credentials SET last_used_at=? WHERE id=?")
+        .bind(now())
+        .bind(&cid)
+        .execute(&mut *c)
+        .await?;
+    sqlx::query("INSERT INTO idempotency VALUES(?,?,?,?,?,?,?)")
+        .bind(&cid)
+        .bind(operation)
+        .bind(key)
+        .bind(payload)
+        .bind(201)
+        .bind(result.to_string())
+        .bind(now())
+        .execute(&mut *c)
+        .await?;
+    Ok((201, result, false))
 }
 fn public_origin(config: &Config) -> bool {
     config.frontend_origin.starts_with("https://")
@@ -548,6 +743,24 @@ async fn dispatch(
             return Err(ApiError(401, "UNAUTHENTICATED"));
         }
         return Ok(reply(200, &app.mainnet_read_only_snapshot().await?, false));
+    }
+    // This is the sole browser-cookie-free surface. It is an HTTPS JSON bearer
+    // API for a single already-configured agent, and it can only evaluate a
+    // proposal; it cannot administer a workspace or touch a wallet.
+    if path == "v1/agent/payment-evaluations" && method == Method::POST {
+        let body: Value = if bytes.is_empty() {
+            json!({})
+        } else {
+            serde_json::from_slice(&bytes).map_err(|_| invalid())?
+        };
+        let key = h
+            .get("idempotency-key")
+            .and_then(|x| x.to_str().ok())
+            .filter(|k| (8..=128).contains(&k.len()))
+            .ok_or_else(invalid)?;
+        let (status, result, replay) = external_evaluation(&app, &mut tx, &h, &body, key).await?;
+        tx.commit().await?;
+        return Ok(reply(status, &result, replay));
     }
     // Mainnet is read-only even if the backend is reached without the Next.js
     // proxy. A production Testnet origin has the same narrow workspace-only
@@ -997,6 +1210,42 @@ async fn perform(
             save_agent(c, &a).await?;
             put(c, "policy", &format!("{aid}:{}", version + 1), owner, &pol).await?;
             Ok((200, pol))
+        }
+        ("GET", ["agents", aid, "credentials"]) => Ok((
+            200,
+            json!({"items":credential_metadata(c, owner, aid).await?}),
+        )),
+        ("POST", ["agents", aid, "credentials"]) => {
+            create_credential(c, owner, aid, b).await.map(|v| (201, v))
+        }
+        ("POST", ["agents", aid, "credentials", cid, "revoke"]) => {
+            owned(c, "agent", aid, owner).await?;
+            let changed = sqlx::query("UPDATE agent_credentials SET revoked_at=? WHERE id=? AND owner=? AND agent_id=? AND revoked_at IS NULL")
+                .bind(now()).bind(cid).bind(owner).bind(aid).execute(&mut *c).await?.rows_affected();
+            if changed != 1 {
+                return Err(ApiError(404, "NOT_FOUND"));
+            }
+            Ok((200, json!({"id":cid,"revoked":true})))
+        }
+        ("POST", ["agents", aid, "credentials", cid, "rotate"]) => {
+            owned(c, "agent", aid, owner).await?;
+            let changed = sqlx::query("UPDATE agent_credentials SET revoked_at=? WHERE id=? AND owner=? AND agent_id=? AND revoked_at IS NULL")
+                .bind(now()).bind(cid).bind(owner).bind(aid).execute(&mut *c).await?.rows_affected();
+            if changed != 1 {
+                return Err(ApiError(404, "NOT_FOUND"));
+            }
+            create_credential(c, owner, aid, b).await.map(|v| (201, v))
+        }
+        ("DELETE", ["agents", aid, "integrations", "activity"]) => {
+            owned(c, "agent", aid, owner).await?;
+            // Owner-directed deletion removes the policy-evaluation record and
+            // its replay snapshots. Credential revocation/audit metadata stays
+            // so revoked credentials remain revoked.
+            let deleted = sqlx::query("DELETE FROM records WHERE kind='policy_evaluation' AND owner=? AND json_extract(body,'$.agentId')=?")
+                .bind(owner).bind(aid).execute(&mut *c).await?.rows_affected();
+            sqlx::query("DELETE FROM idempotency WHERE operation='POST v1/agent/payment-evaluations' AND principal IN (SELECT id FROM agent_credentials WHERE owner=? AND agent_id=?)")
+                .bind(owner).bind(aid).execute(&mut *c).await?;
+            Ok((200, json!({"deleted":deleted})))
         }
         ("POST", ["merchant", "invoices"]) => {
             // A live backend without a verified merchant receiving capability

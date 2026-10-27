@@ -17,6 +17,10 @@
 - Noir Wallet Testnet addresses, all wallet-reported balances, and sanitized
   activity are displayed locally. No balance, address, history, memo, seed, or
   viewing key is sent to the VeilPay backend.
+- The v1 external-agent API is restricted to a credential's single workspace
+  and agent. It returns a minimal policy decision only; it does not expose
+  wallet data, full policies, budgets, allowlists, other activity, or admin APIs.
+  Owners can revoke/rotate credentials and delete eligible integration activity.
 
 ## Deliberately unavailable
 

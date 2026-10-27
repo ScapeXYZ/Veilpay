@@ -79,6 +79,10 @@ export default function PrivacyPage() {
     <>
       <PageHeader title="Privacy" subtitle="Who is meant to see what about a payment. VeilPay is designed for shielded Zcash, where amounts, sender, receiver and notes are not public. This page explains the design; it does not verify it on a real network." />
       {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Privacy details" unknown={mode.kind === "unknown"} /> : <>
+      <Card title="Privacy by design" testId="privacy-agent-boundary">
+        <div className="grid gap-4 text-sm text-zinc-400 md:grid-cols-3"><p><b className="text-zinc-100">Stays in your browser.</b><br />Noir Wallet-reported addresses, balances, and history are read-only observation and are not sent to VeilPay.</p><p><b className="text-zinc-100">Stored by VeilPay.</b><br />Workspace, policy, credential verifier, and evaluation data needed to enforce rules. You can revoke credentials and delete an agent&apos;s integration activity.</p><p><b className="text-zinc-100">Visible to external agents.</b><br />Only a minimal allow/deny decision, generic reason code, request ID, and policy version—not wallet data, budgets, allowlists, or full policies.</p></div>
+        <p className="mt-3 text-xs text-zinc-500">VeilPay does not claim zero-knowledge policy enforcement or complete anonymity. The server necessarily processes a proposal&apos;s amount, merchant identifier, reference, and timing.</p>
+      </Card>
       <SealedOpenSheet />
       {!sel ? (
         <Notice tone="neutral" title="No payment to show yet">

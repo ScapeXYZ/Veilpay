@@ -15,6 +15,7 @@ import { formatZec, parseZecInput, pctZat } from "@/lib/zat";
 import { Term } from "@/components/term";
 import { MainnetReadOnlyNotice } from "@/components/mainnet-readonly";
 import { PolicySheet } from "@/components/sealed/policy-sheet";
+import { AgentIntegration } from "@/components/agent-integration";
 
 function Section({ icon, title, help, children }: { icon: ReactNode; title: string; help: ReactNode; children: ReactNode }) {
   return (
@@ -182,6 +183,7 @@ function PolicyForm() {
     <>
       <PolicySheet agent={a} />
       <PolicyEditor key={a.policy.version} agent={a} />
+      <AgentIntegration agentId={a.id} />
     </>
   );
 }
