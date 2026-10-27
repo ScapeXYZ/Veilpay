@@ -42,6 +42,7 @@ export interface ApiClient {
   createAgentCredential(agentId: string): Promise<z.infer<typeof AgentCredentialIssued>>;
   revokeAgentCredential(agentId: string, credentialId: string): Promise<void>;
   rotateAgentCredential(agentId: string, credentialId: string): Promise<z.infer<typeof AgentCredentialIssued>>;
+  deleteAgentIntegrationActivity(agentId: string): Promise<z.infer<typeof import("@/lib/contract/schemas").AgentIntegrationActivityDeletion>>;
   setAgentStatus(agentId: string, status: AgentStatus): Promise<Agent>;
   getPolicy(agentId: string): Promise<Policy>;
   putPolicy(agentId: string, body: PolicyUpdate): Promise<Policy>;

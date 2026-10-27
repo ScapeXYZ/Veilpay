@@ -89,9 +89,20 @@ async fn decode(response: axum::response::Response) -> Reply {
     }
 }
 async fn agent_call(router: &Router, credential: &str, key: &str, body: Value) -> Reply {
-    let response = router.clone().oneshot(Request::builder().method("POST").uri("/api/v1/agent/payment-evaluations")
-        .header("authorization", format!("Bearer {credential}")).header("idempotency-key", key)
-        .header("content-type", "application/json").body(Body::from(body.to_string())).unwrap()).await.unwrap();
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/agent/payment-evaluations")
+                .header("authorization", format!("Bearer {credential}"))
+                .header("idempotency-key", key)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     decode(response).await
 }
 impl Fixture {
@@ -893,18 +904,117 @@ async fn universal_agent_credentials_are_scoped_revocable_and_idempotent() {
     let f = Fixture::new().await;
     let a = f.agent("100", "500").await;
     let aid = a["id"].as_str().unwrap();
-    let issued = call(&f.router, "POST", &format!("agents/{aid}/credentials"), Some(&f.customer), Some("credential-create"), json!({})).await;
+    let issued = call(
+        &f.router,
+        "POST",
+        &format!("agents/{aid}/credentials"),
+        Some(&f.customer),
+        Some("credential-create"),
+        json!({}),
+    )
+    .await;
     assert_eq!(issued.status, 201, "{}", issued.body);
     let token = issued.body["token"].as_str().unwrap();
-    let allowed = agent_call(&f.router, token, "agent-eval-1", json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"})).await;
-    assert_eq!(allowed.status, 201); assert_eq!(allowed.body["allowed"], true);
-    let replay = agent_call(&f.router, token, "agent-eval-1", json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"})).await;
-    assert_eq!(replay.status, 201); assert!(replay.replay);
-    let denied = agent_call(&f.router, token, "agent-eval-2", json!({"merchantId":"other","amountZat":"101","reference":"proposal"})).await;
-    assert_eq!(denied.body["allowed"], false); assert_eq!(denied.body["reasonCode"], "CAP_EXCEEDED");
+    let allowed = agent_call(
+        &f.router,
+        token,
+        "agent-eval-1",
+        json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"}),
+    )
+    .await;
+    assert_eq!(allowed.status, 201);
+    assert_eq!(allowed.body["allowed"], true);
+    assert!(allowed.body.get("agentId").is_none());
+    assert!(allowed.body.get("policy").is_none());
+    assert!(
+        !allowed
+            .raw
+            .windows(token.len())
+            .any(|v| v == token.as_bytes())
+    );
+    let replay = agent_call(
+        &f.router,
+        token,
+        "agent-eval-1",
+        json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"}),
+    )
+    .await;
+    assert_eq!(replay.status, 201);
+    assert!(replay.replay);
+    let denied = agent_call(
+        &f.router,
+        token,
+        "agent-eval-2",
+        json!({"merchantId":"other","amountZat":"101","reference":"proposal"}),
+    )
+    .await;
+    assert_eq!(denied.body["allowed"], false);
+    assert_eq!(denied.body["reasonCode"], "POLICY_DENIED");
+    assert_eq!(agent_call(&f.router, token, "agent-eval-extra", json!({"merchantId":"mer_demo","amountZat":"1","reference":"proposal","extractPolicy":true})).await.status,400);
+    assert_eq!(
+        call(
+            &f.router,
+            "PATCH",
+            &format!("agents/{aid}"),
+            Some(&f.customer),
+            None,
+            json!({"status":"paused"})
+        )
+        .await
+        .status,
+        200
+    );
+    let paused = agent_call(
+        &f.router,
+        token,
+        "agent-eval-paused",
+        json!({"merchantId":"mer_demo","amountZat":"1","reference":"proposal"}),
+    )
+    .await;
+    assert_eq!(paused.body["reasonCode"], "AGENT_PAUSED");
+    let erased = call(
+        &f.router,
+        "DELETE",
+        &format!("agents/{aid}/integrations/activity"),
+        Some(&f.customer),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(erased.status, 200);
+    assert!(erased.body["deleted"].as_i64().unwrap() >= 2);
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM records WHERE kind='policy_evaluation' AND owner='customer_demo'",
+    )
+    .fetch_one(&f.app.pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, 0);
     let cid = issued.body["credential"]["id"].as_str().unwrap();
-    assert_eq!(call(&f.router,"POST",&format!("agents/{aid}/credentials/{cid}/revoke"),Some(&f.customer),Some("credential-revoke"),json!({})).await.status,200);
-    assert_eq!(agent_call(&f.router, token, "agent-eval-3", json!({"merchantId":"mer_demo","amountZat":"1","reference":"proposal"})).await.status,401);
+    assert_eq!(
+        call(
+            &f.router,
+            "POST",
+            &format!("agents/{aid}/credentials/{cid}/revoke"),
+            Some(&f.customer),
+            Some("credential-revoke"),
+            json!({})
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        agent_call(
+            &f.router,
+            token,
+            "agent-eval-3",
+            json!({"merchantId":"mer_demo","amountZat":"1","reference":"proposal"})
+        )
+        .await
+        .status,
+        401
+    );
 }
 
 #[tokio::test]

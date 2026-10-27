@@ -16,7 +16,7 @@ Headers: `Authorization: Bearer vpa_…`, `Idempotency-Key: <8–128 chars>`, an
 {"merchantId":"merchant_acme","amountZat":"2500000","reference":"invoice-42"}
 ```
 
-The `amountZat` value is a positive integer decimal string. The response is `201` and includes `allowed`, `reasonCode`, `explanation`, `policyVersion`, and `requestId`. Common reason codes are `AGENT_PAUSED`, `POLICY_EXPIRED`, `CAP_EXCEEDED`, `BUDGET_EXCEEDED`, and `MERCHANT_NOT_ALLOWED`.
+The `amountZat` value is a positive integer decimal string. The response is `201` and includes only `allowed`, `reasonCode`, `explanation`, `policyVersion`, and `requestId`. It never includes wallet data, agent/workspace IDs, budgets, allowlists, full policies, credentials, or other activity. Reasons are minimal: `AGENT_PAUSED` or generic `POLICY_DENIED`, which avoids exposing private thresholds.
 
 An allowed decision is only a recorded policy evaluation. It is **not** a payment, balance reservation, wallet authorization, invoice, signature, broadcast, confirmation, or settlement. ZEC execution remains disabled.
 
@@ -41,4 +41,4 @@ await fetch(url, {method: "POST", headers: {Authorization: `Bearer ${credential}
 
 OpenClaw (optional): configure an HTTP action with the same URL, bearer header, idempotency key, and JSON body. No OpenClaw plugin, wallet extension, or LLM provider access is required.
 
-Malformed, expired, revoked, or cross-workspace credentials return no workspace data. Retry transient `5xx` or `429` responses with backoff and the same key; do not retry validation or deny responses as a new payment. Updating policies, pausing/resuming an agent, and rotating a credential take effect on the next request without reconnecting a client.
+Malformed, expired, revoked, or cross-workspace credentials return no workspace data. Unexpected request fields are rejected. Retry transient `5xx` or `429` responses with backoff and the same key; do not retry validation or deny responses as a new payment. Updating policies, pausing/resuming an agent, and rotating a credential take effect on the next request without reconnecting a client.

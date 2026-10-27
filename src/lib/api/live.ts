@@ -105,6 +105,7 @@ export class LiveApiClient implements ApiClient {
   createAgentCredential(agentId: string) { return this.call(S.AgentCredentialIssued, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
   async revokeAgentCredential(agentId: string, credentialId: string) { await this.call(S.AgentCredentialRevoked, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials/${encodeURIComponent(credentialId)}/revoke`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
   rotateAgentCredential(agentId: string, credentialId: string) { return this.call(S.AgentCredentialIssued, "POST", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/credentials/${encodeURIComponent(credentialId)}/rotate`, { body: {}, csrf: true, idempotencyKey: newIdempotencyKey() }); }
+  deleteAgentIntegrationActivity(agentId: string) { return this.call(S.AgentIntegrationActivityDeletion, "DELETE", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}/integrations/activity`, { csrf: true }); }
 
   setAgentStatus(agentId: string, status: S.AgentStatus) {
     return this.call(S.Agent, "PATCH", `/agents/${encodeURIComponent(S.AgentIdParam.parse(agentId))}`, {

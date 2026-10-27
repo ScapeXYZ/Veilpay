@@ -52,6 +52,10 @@ VeilPay does not currently create shielded transactions. Zcash on-chain shielded
 
 Browser workspace writes require the configured Origin and a session-bound CSRF token; state-changing browser POSTs require idempotency keys. Agent API calls use separate bearer credentials and cannot use cookie administration routes. Read the [privacy threat model](docs/PRIVACY_THREAT_MODEL.md) before a demo.
 
+### Privacy by Design
+
+The agent API returns only a request identifier, allow/deny result, generic reason code, and policy version. It does not return wallet observations, policies, budgets, allowlists, activity, credentials, or workspace identifiers. Credential verifiers—not bearer values—are stored; request replay uses a digest rather than raw API payload. Regression tests cover minimal responses, malformed extraction attempts, revocation, pause, policy changes, and Testnet execution gates. See the [privacy audit](docs/PRIVACY_AUDIT.md) and [privacy demonstration guide](docs/PRIVACY_DEMO.md).
+
 ## Frequently Asked Questions
 
 ### What is VeilPay?

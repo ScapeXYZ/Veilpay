@@ -82,6 +82,7 @@ export const AgentCredential = z.object({
 export const AgentCredentialIssued = z.object({ credential: AgentCredential, token: z.string() });
 export const AgentCredentialList = z.object({ items: z.array(AgentCredential) });
 export const AgentCredentialRevoked = z.object({ id: z.string(), revoked: z.literal(true) });
+export const AgentIntegrationActivityDeletion = z.object({ deleted: z.number().int().min(0) });
 
 export const DemoSessionRequest = z.object({ context: SessionContext });
 
