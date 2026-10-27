@@ -37,6 +37,7 @@ export const VIOLATION_COPY: Record<ViolationCode, string> = {
   AMOUNT_MISMATCH: "Amount does not match the invoice",
   INVOICE_NOT_PAYABLE: "Invoice is not open for payment",
   POLICY_VERSION_CHANGED: "Policy changed since approval",
+  POLICY_EXPIRED: "Policy expired",
 };
 
 export const FAILURE_COPY: Record<Failure["code"], string> = {

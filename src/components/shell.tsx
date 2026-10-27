@@ -1,12 +1,13 @@
 "use client";
 
 import clsx from "clsx";
-import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, LifeBuoy, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Shield, ShieldCheck, Store, Wallet, X } from "lucide-react";
+import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Settings, Shield, ShieldCheck, Store, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNetworkMode } from "@/lib/api/data-source";
-import { errorText, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
+import { errorText, useApi, useHealth, useSession, useSwitchContext } from "@/lib/api/hooks";
+import { networkModeOf } from "@/lib/mode";
 import { fmtTime } from "@/lib/present";
 import { MockBanner, SourceTag } from "./source";
 import { Badge, Button, ErrorBox, Skeleton } from "./ui";
@@ -77,16 +78,16 @@ function ContextSwitch() {
 
 const NAV = [
   { href: "/app", label: "Overview", short: "Overview", icon: LayoutDashboard },
-  { href: "/app/spending-rules", label: "Spending rules", short: "Rules", icon: ShieldCheck },
-  { href: "/app/payments", label: "Payments", short: "Payments", icon: ListOrdered },
-  { href: "/app/merchant", label: "Merchant", short: "Merchant", icon: Store },
-  { href: "/app/help", label: "Help & demo", short: "Help", icon: LifeBuoy },
+  { href: "/app/spending-rules", label: "Agent & rules", short: "Agent", icon: ShieldCheck },
+  { href: "/app/payments", label: "Payment requests", short: "Requests", icon: ListOrdered },
+  { href: "/app/merchant", label: "Merchant verification", short: "Merchant", icon: Store },
+  { href: "/app/help", label: "Safety & settings", short: "Safety", icon: Settings },
 ] as const;
 /** Secondary areas: reachable from More and from contextual links, never in the main nav. */
 const MORE = [
-  { href: "/app/activity", label: "Activity", icon: Activity },
-  { href: "/app/privacy", label: "Privacy", icon: Eye },
-  { href: "/app/wallet", label: "Wallet", icon: Wallet },
+  { href: "/app/activity", label: "Activity & receipts", icon: Activity },
+  { href: "/app/privacy", label: "Privacy safeguards", icon: Eye },
+  { href: "/app/wallet", label: "Wallet & privacy", icon: Wallet },
 ] as const;
 
 function isActive(path: string, href: string) {
@@ -124,9 +125,9 @@ function StatusStrip() {
   );
 }
 
-function MoreSheet({ onClose, restricted }: { onClose: () => void; restricted: boolean }) {
+function MoreSheet({ onClose, restricted, mock }: { onClose: () => void; restricted: boolean; mock: boolean }) {
   const path = usePathname();
-  const destinations = restricted ? [...MORE, { href: "/", label: "Home", icon: Home }] : [NAV[4], ...MORE, { href: "/demo", label: "Guided demo", icon: PlayCircle }, { href: "/", label: "Home", icon: Home }];
+  const destinations = restricted ? [...MORE, { href: "/", label: "Home", icon: Home }] : [NAV[4], ...MORE, ...(mock ? [{ href: "/demo", label: "Guided demo", icon: PlayCircle }] : []), { href: "/", label: "Home", icon: Home }];
   return (
     <div className="fixed inset-0 z-[70] lg:hidden" role="dialog" aria-modal="true" aria-label="More navigation">
       <button className="absolute inset-0 bg-black/60" aria-label="Close menu" onClick={onClose} />
@@ -174,6 +175,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const [more, setMore] = useState(false);
   const tour = useOnboarding();
   const restricted = mode.kind === "mainnet_readonly" || mode.kind === "unknown";
+  const mock = mode.kind === "mock";
   const navigation = mode.kind === "unknown" ? NAV.slice(0, 1) : mode.kind === "mainnet_readonly" ? NAV.slice(0, 4) : NAV;
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -195,7 +197,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="mt-auto flex flex-col gap-3 px-2">
-            {!restricted && <p className="text-xs leading-relaxed text-zinc-500">Owner and merchant views are separate demo sessions, not real sign-in.</p>}
+            {mock && <p className="text-xs leading-relaxed text-zinc-500">Owner and merchant views are separate practice sessions, not real sign-in.</p>}
           </div>
         </aside>
         <div className="min-w-0 flex-1">
@@ -203,7 +205,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
               <div className="lg:hidden"><Logo compact /></div>
               <div className="hidden lg:block"><StatusStrip /></div>
-              {!restricted && <ContextSwitch />}
+              {mock && <ContextSwitch />}
             </div>
             <div className="border-t border-zinc-900 px-4 py-1.5 lg:hidden"><StatusStrip /></div>
           </header>
@@ -224,7 +226,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
           <MoreHorizontal size={18} aria-hidden /> More
         </button>
       </nav>
-      {more && <MoreSheet onClose={() => setMore(false)} restricted={restricted} />}
+      {more && <MoreSheet onClose={() => setMore(false)} restricted={restricted} mock={mock} />}
     </div>
   );
 }
@@ -245,19 +247,22 @@ export function PageHeader({ title, subtitle, right }: { title: string; subtitle
 }
 
 /**
- * Owner-only or merchant-only pages switch the demo session to the right role by themselves
- * (once, no loop), instead of parking the user behind a "switch context" button. The sessions stay
- * isolated server-side: the merchant session still cannot read the owner's data.
+ * Only isolated mock fixtures may switch customer/merchant demo context. A live
+ * workspace has one server-owned role, so a wrong-context view must never
+ * manufacture a fixture session or change authenticated identity.
  */
 export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"; children: ReactNode }) {
+  const api = useApi();
   const { data: s, isLoading, error, refetch } = useSession();
   const health = useHealth();
   const sw = useSwitchContext();
   const { mutate, isPending, isError } = sw;
-  const wrong = !!s && s.context !== ctx;
+  const fixtureBackend = health.data && networkModeOf(health.data, api.mode).kind === "mock";
+  const canSwitchFixture = api.mode === "mock" || fixtureBackend;
+  const wrong = s?.authenticated === true && s.context !== ctx;
   useEffect(() => {
-    if (wrong && !isPending && !isError) mutate(ctx);
-  }, [wrong, isPending, isError, mutate, ctx]);
+    if (wrong && canSwitchFixture && !isPending && !isError) mutate(ctx);
+  }, [wrong, canSwitchFixture, isPending, isError, mutate, ctx]);
   // In live mode the session query deliberately waits for the server-owned
   // network mode. Keep that bootstrap state visible and announced instead of
   // mistaking a disabled query for a missing session.
@@ -266,7 +271,10 @@ export function RequireContext({ ctx, children }: { ctx: "customer" | "merchant"
     <p>Could not load your session. {errorText(error)}</p>
     <Button variant="secondary" onClick={() => refetch()}>Try again</Button>
   </ErrorBox>;
+  if (!s.authenticated) return <div data-testid="auth-required" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">Create a VeilPay testnet workspace on Overview before managing agents, policies, or payment requests. Connecting a wallet does not create backend ownership.</div>;
   const role = ctx === "customer" ? "owner" : "merchant";
+  if (wrong)
+    if (!canSwitchFixture) return <div data-testid="wrong-context" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">This workspace is not authorized for the {role} area. VeilPay keeps account roles and records separate; it will not switch identity or create a demo session.</div>;
   if (wrong)
     return (
       <div data-testid="wrong-context" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-300">

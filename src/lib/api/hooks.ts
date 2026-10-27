@@ -18,9 +18,19 @@ export function useApi(): ApiClient {
 
 export const AgentSelectionContext = hmrSingleton("AgentSelectionContext", () => createContext<{ agentId: string | null; setAgentId: (id: string) => void }>({ agentId: null, setAgentId: () => {} }));
 export function useSelectedAgent() {
+  const api = useApi();
   const selection = useContext(AgentSelectionContext);
   const { data: session } = useSession();
-  return { ...selection, agentId: selection.agentId ?? session?.agentId };
+  const health = useHealth();
+  const agents = useAgents(Boolean(session?.authenticated && session.context === "customer"));
+  // Fixture walkthroughs deliberately require an explicit agent selection.  A
+  // real authenticated workspace, by contrast, can recover its first owned
+  // agent after a refresh without putting any agent id in browser storage.
+  const fixtureBackend = health.data && networkModeOf(health.data, api.mode).kind === "mock";
+  return {
+    ...selection,
+    agentId: selection.agentId ?? session?.agentId ?? (fixtureBackend ? null : agents.data?.items[0]?.id) ?? null,
+  };
 }
 
 const POLL_MS = 4000;
@@ -29,6 +39,7 @@ export const qk = {
   health: ["health"] as const,
   session: ["session"] as const,
   agent: (id: string) => ["agent", id] as const,
+  agents: ["agents"] as const,
   payments: ["payments"] as const,
   payment: (id: string) => ["payment", id] as const,
   invoices: ["invoices"] as const,
@@ -43,24 +54,20 @@ export function useHealth() {
 export function useSession() {
   const api = useApi();
   const health = useHealth();
-  // The operational shell is shared by the demo and the mainnet read-only
-  // view. Wait for the server-owned network mode before treating a 401 as an
-  // invitation to create a demo session. Mainnet has no session surface at
-  // all, so it must not make either request.
-  const mayUseDemoSession = api.mode === "mock" || (
-    health.isSuccess && networkModeOf(health.data, api.mode).kind !== "mainnet_readonly"
-  );
+  const mayUseSession = api.mode === "mock" || (health.isSuccess && networkModeOf(health.data, api.mode).kind !== "mainnet_readonly");
   return useQuery({
     queryKey: qk.session,
     queryFn: async () => {
-      try {
-        return await api.getSession();
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return api.createDemoSession("customer");
-        throw e;
+      try { return await api.getSession(); }
+      catch (error) {
+        // Only an explicit missing fixture session can bootstrap mock data.
+        // Transport and server errors must remain visible and recoverable.
+        const fixtureBackend = health.data && networkModeOf(health.data, api.mode).kind === "mock";
+        if ((api.mode === "mock" || fixtureBackend) && error instanceof ApiError && error.status === 401) return api.createDemoSession("customer");
+        throw error;
       }
     },
-    enabled: mayUseDemoSession,
+    enabled: mayUseSession,
     staleTime: 60_000,
     retry: false,
   });
@@ -68,7 +75,31 @@ export function useSession() {
 
 /** Session-scoped reads wait for the bootstrap cookie; React Query deduplicates bootstrap. */
 export function useSessionReady(): boolean {
-  return useSession().isSuccess;
+  const session = useSession();
+  return session.isSuccess && session.data?.authenticated === true;
+}
+
+export function useAgents(enabled = true) {
+  const api = useApi();
+  const ready = useSessionReady();
+  return useQuery({ queryKey: qk.agents, queryFn: () => api.listAgents(), enabled: ready && enabled, refetchInterval: POLL_MS });
+}
+
+export function useRegisterAccount() {
+  const api = useApi(); const qc = useQueryClient();
+  return useMutation({ mutationFn: (body: { displayName: string; accountType: "individual" | "freelancer" | "merchant" | "team" | "business" }) => api.registerAccount(body), onSuccess: (session) => { qc.setQueryData(qk.session, session); qc.invalidateQueries({ queryKey: qk.agents }); } });
+}
+
+/** Explicit logout is a server-side revocation, not only a local UI reset. */
+export function useLogout() {
+  const api = useApi(); const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.logout(),
+    onSuccess: (session) => {
+      qc.clear();
+      qc.setQueryData(qk.session, session);
+    },
+  });
 }
 
 export function useSwitchContext() {
@@ -139,6 +170,7 @@ function useInvalidateCustomer() {
   const qc = useQueryClient();
   return () => {
     qc.invalidateQueries({ queryKey: ["agent"] });
+    qc.invalidateQueries({ queryKey: qk.agents });
     qc.invalidateQueries({ queryKey: qk.payments });
     qc.invalidateQueries({ queryKey: ["payment"] });
   };

@@ -4,11 +4,7 @@ import { PageHeader } from "@/components/shell";
 import { Card, Notice } from "@/components/ui";
 import { NoirWalletCard } from "@/components/noir-wallet-card";
 import { ADDRESS_FACT, AddressChip } from "@/components/sealed/address-chip";
-import { BusinessOnboarding } from "@/components/wallet-ux/business-onboarding";
-import { WalletPanel } from "@/components/wallet-ux/wallet-panel";
 import { useNetworkMode } from "@/lib/api/data-source";
-import { useNoirWalletUx } from "@/lib/wallet-ux/use-noir-wallet-ux";
-import { expectedWalletNetwork } from "@/lib/wallet-ux/wallet-state";
 
 function WalletOff({ kind }: { kind: string }) {
   if (kind === "mock")
@@ -21,22 +17,6 @@ function WalletOff({ kind }: { kind: string }) {
     <Notice tone="warning" title="Wallet connection paused" testId="wallet-off-unknown">
       VeilPay cannot confirm which network the server is on, so it does not offer a wallet connection. Nothing is read from any wallet.
     </Notice>
-  );
-}
-
-const STEPS = ["Connect Noir Wallet", "Choose an account", "Business setup", "Saved as a local draft"] as const;
-
-/** Wallet-first journey, shown as a quiet ruled list. Presentation only: the steps are not tracked. */
-function JourneySteps() {
-  return (
-    <ol data-testid="wallet-journey" aria-label="Wallet setup steps" className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-line py-3 text-xs text-zinc-400 sm:grid-cols-4">
-      {STEPS.map((s, i) => (
-        <li key={s} className="flex min-w-0 items-baseline gap-2">
-          <span className="font-mono text-zinc-500">{String(i + 1).padStart(2, "0")}</span>
-          <span className="truncate">{s}</span>
-        </li>
-      ))}
-    </ol>
   );
 }
 
@@ -70,26 +50,17 @@ function ReadsSheet() {
   );
 }
 
-function WalletSetup({ expected }: { expected: NonNullable<ReturnType<typeof expectedWalletNetwork>> }) {
-  const wallet = useNoirWalletUx(expected);
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <WalletPanel wallet={wallet} />
-      <BusinessOnboarding wallet={wallet} />
-    </div>
-  );
-}
-
 export default function WalletPage() {
   const mode = useNetworkMode();
-  const expected = expectedWalletNetwork(mode.kind);
-  const observationOnly = mode.kind === "mainnet_readonly" || mode.kind === "unknown";
+  const walletAvailable = mode.kind === "mainnet_readonly" || mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled" || mode.kind === "unknown";
+  const networkLabel = mode.kind === "mainnet_readonly" ? "mainnet" : mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled" ? "testnet" : "wallet";
   return (
     <>
-      <PageHeader title="Wallet" subtitle="Connect Noir Wallet read-only. VeilPay never signs, sends, registers, or stores wallet data here." />
-      {/* Mainnet and unknown-health views use the same read-only observation
-          component as Overview; they never mount the separate setup workflow. */}
-      {observationOnly ? <NoirWalletCard allowWhenBackendUnavailable /> : expected ? <><JourneySteps /><WalletSetup expected={expected} /></> : <WalletOff kind={mode.kind} />}
+      <PageHeader title="Wallet & privacy" subtitle={networkLabel === "wallet" ? "Connect Noir Wallet to view its reported data once network health is confirmed. VeilPay never signs, sends, registers, or stores wallet data here." : `Connect Noir Wallet to view its ${networkLabel}-reported data. VeilPay never signs, sends, registers, or stores wallet data here.`} />
+      {/* Overview and this route deliberately mount one canonical read-only
+          observation component. No separate setup state can retain a stale
+          account, balance, or network decision. */}
+      {walletAvailable ? <NoirWalletCard allowWhenBackendUnavailable /> : <WalletOff kind={mode.kind} />}
       <ReadsSheet />
     </>
   );

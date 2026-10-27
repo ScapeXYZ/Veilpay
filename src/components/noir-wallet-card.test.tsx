@@ -116,6 +116,18 @@ describe("NoirWalletCard", () => {
     expect(fake.zcash.getTransactionHistory).not.toHaveBeenCalled();
   });
 
+  it("accepts testnet accounts only while the backend confirms testnet", async () => {
+    const fake = provider({ authorized: true });
+    mode.current = "testnet_manual";
+    fake.provider.zcash.getAccounts.mockResolvedValue({ transparent: "tmabc", shielded: "utest1abc", accounts: [{ ...accounts[0], addresses: { transparent: "tmabc", shielded: "utest1abc" } }] });
+    fake.provider.zcash.getBalance.mockResolvedValue({ transparent: "0", shielded: "1", available: "1", total: "1", accounts: [{ id: accounts[0].id, walletId: accounts[0].walletId, accountId: accounts[0].accountId, synced: true, balance: { transparent: "0", shielded: "1", available: "1", total: "1" } }] });
+    getNoirWallet.mockReturnValue(fake.provider);
+    render(<NoirWalletCard />);
+    await screen.findByTestId("noir-balances");
+    expect(screen.getByTestId("noir-addresses")).toHaveTextContent("tmabc");
+    expect(screen.getByTestId("noir-addresses")).toHaveTextContent("utest1abc");
+  });
+
   it("switches only between authorized accounts and labels an unsynced wallet balance", async () => {
     const fake = provider({ authorized: true });
     getNoirWallet.mockReturnValue(fake.provider);

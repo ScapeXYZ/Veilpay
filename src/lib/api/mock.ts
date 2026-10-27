@@ -262,6 +262,7 @@ export class MockApiClient implements ApiClient, MockControls {
   async createDemoSession(context: Ctx) {
     S.DemoSessionRequest.parse({ context });
     this.session = {
+      authenticated: true,
       context,
       agentId: context === "customer" ? AGENT_ID : null,
       merchantId: context === "merchant" ? MERCHANT_ID : null,
@@ -271,9 +272,20 @@ export class MockApiClient implements ApiClient, MockControls {
     return this.respond(S.Session, this.session);
   }
 
+  async registerAccount(_body: z.infer<typeof S.AccountRegister>) {
+    // Explicitly fixture-only: live registration always goes to Rust.
+    void _body;
+    return this.createDemoSession("customer");
+  }
+
   async getSession() {
     if (!this.session) err(401, "UNAUTHENTICATED", "No demo session.");
     return this.respond(S.Session, this.session);
+  }
+
+  async logout() {
+    this.session = null;
+    return this.respond(S.Session, { authenticated: false, context: null, accountId: null, accountType: null, agentId: null, merchantId: null, csrfToken: null, expiresAt: null });
   }
 
   async createAgent(body: { name: string; policy: S.PolicyRules }, idempotencyKey: string): Promise<S.Agent> {
@@ -283,6 +295,11 @@ export class MockApiClient implements ApiClient, MockControls {
     return this.idempotent("createAgent", idempotencyKey, body, () =>
       err(409, "INVALID_TRANSITION", "The demo session already has its seeded agent."),
     );
+  }
+
+  async listAgents() {
+    this.requireCtx("customer");
+    return this.respond(S.AgentList, { items: [this.agent()] });
   }
 
   async getAgent(agentId: string) {

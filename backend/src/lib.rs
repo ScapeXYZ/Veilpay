@@ -100,6 +100,18 @@ fn now() -> String {
 fn id(prefix: &str) -> String {
     format!("{prefix}_{}", uuid::Uuid::new_v4().simple())
 }
+fn session_token() -> String {
+    // 256 bits of browser-held entropy. The database holds only its SHA-256
+    // digest, never this bearer credential.
+    format!(
+        "ses_{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+fn token_hash(token: &str) -> String {
+    format!("{:x}", Sha256::digest(token.as_bytes()))
+}
 fn invalid() -> ApiError {
     ApiError(400, "VALIDATION_FAILED")
 }
@@ -138,9 +150,22 @@ fn policy(v: &Value, version: i64) -> Result<Value> {
     if !(30..=86400).contains(&ttl) {
         return Err(invalid());
     }
-    Ok(
-        json!({"perTxLimitZat":v["perTxLimitZat"],"totalBudgetZat":v["totalBudgetZat"],"allowedMerchantIds":a,"requestTtlSeconds":ttl,"version":version,"updatedAt":now()}),
-    )
+    let expires = v
+        .get("expiresAt")
+        .map(|x| date(x.as_str().ok_or_else(invalid)?))
+        .transpose()?;
+    // A policy that is already expired could look valid in a browser while
+    // silently rejecting every request. Refuse it at write time instead.
+    if expires.is_some_and(|expiry| expiry <= Utc::now()) {
+        return Err(invalid());
+    }
+    let mut out = json!({"perTxLimitZat":v["perTxLimitZat"],"totalBudgetZat":v["totalBudgetZat"],"allowedMerchantIds":a,"requestTtlSeconds":ttl,"version":version,"updatedAt":now()});
+    // Optional contract fields are absent when unset. Returning JSON null here
+    // would make a strict client mistake a valid policy for a malformed one.
+    if let Some(expiry) = expires {
+        out["expiresAt"] = json!(expiry.to_rfc3339());
+    }
+    Ok(out)
 }
 async fn get(c: &mut SqliteConnection, kind: &str, key: &str) -> Result<(String, Value)> {
     let r = sqlx::query("SELECT owner,body FROM records WHERE kind=? AND id=?")
@@ -365,7 +390,13 @@ impl App {
                     .expect("valid frontend origin"),
             )
             .allow_credentials(true)
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
             .allow_headers([
                 "content-type".parse().unwrap(),
                 "x-csrf-token".parse().unwrap(),
@@ -378,6 +409,60 @@ impl App {
             .layer(cors)
             .with_state(self)
     }
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get("cookie")
+        .and_then(|x| x.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .find_map(|s| s.trim().strip_prefix(&format!("{name}=")))
+        .map(str::to_owned)
+}
+fn cookie_name(config: &Config) -> &'static str {
+    // The interactive testnet frontend is deliberately bound to this loopback
+    // development origin. All other environments retain the hardened __Host
+    // cookie invariant (including fixture coverage).
+    if config.frontend_origin == "http://localhost:3200" {
+        "veilpay_session"
+    } else {
+        "__Host-veilpay_session"
+    }
+}
+fn set_session_cookie(config: &Config, token: &str) -> String {
+    if config.frontend_origin == "http://localhost:3200" {
+        // Loopback-only local testnet development cannot use a __Host cookie on
+        // plain HTTP. Production requires HTTPS above.
+        format!("veilpay_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800")
+    } else {
+        format!(
+            "__Host-veilpay_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800"
+        )
+    }
+}
+fn clear_session_cookie(config: &Config) -> String {
+    if config.frontend_origin == "http://localhost:3200" {
+        "veilpay_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0".into()
+    } else {
+        "__Host-veilpay_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0".into()
+    }
+}
+/// The only live-Testnet mutations this release supports. This is deliberately
+/// independent of any browser mode flag: the backend knows both its configured
+/// network and whether its adapter is the broadcast-disabled observer.
+fn workspace_write(parts: &[&str], method: &Method) -> bool {
+    matches!(
+        (method.as_str(), parts),
+        ("POST", ["auth", "register"])
+            | ("DELETE", ["session"])
+            | ("POST", ["agents"])
+            | ("PATCH", ["agents", _])
+            | ("PUT", ["agents", _, "policy"])
+    )
+}
+fn public_origin(config: &Config) -> bool {
+    config.frontend_origin.starts_with("https://")
 }
 async fn handle(
     State(app): State<App>,
@@ -444,6 +529,23 @@ async fn dispatch(
         }
         return Ok(reply(200, &app.mainnet_read_only_snapshot().await?, false));
     }
+    // Mainnet is read-only even if the backend is reached without the Next.js
+    // proxy. A production Testnet origin has the same narrow workspace-only
+    // surface, and the broadcast-disabled Testnet adapter applies that limit in
+    // local inspection too. This keeps invoice/payment/execution paths closed
+    // at both public boundaries without trusting a browser-provided network.
+    let disabled_testnet = app.config.network == "testnet"
+        && app
+            .wallet
+            .as_ref()
+            .is_some_and(|wallet| wallet.workspace_only());
+    if write
+        && (app.config.network == "mainnet"
+            || ((disabled_testnet || public_origin(&app.config))
+                && !workspace_write(&parts, &method)))
+    {
+        return Err(ApiError(404, "NOT_FOUND"));
+    }
     if write && h.get("origin").and_then(|x| x.to_str().ok()) != Some(&app.config.frontend_origin) {
         return Err(ApiError(403, "CSRF_FAILED"));
     }
@@ -452,15 +554,55 @@ async fn dispatch(
     } else {
         serde_json::from_slice(&bytes).map_err(|_| invalid())?
     };
-    let cookie = h
-        .get("cookie")
-        .and_then(|x| x.to_str().ok())
-        .unwrap_or("")
-        .split(';')
-        .find_map(|s| s.trim().strip_prefix("__Host-veilpay_session="))
-        .unwrap_or("");
-    if path == "session/demo" && method == Method::POST {
+    let cookie = cookie_value(&h, cookie_name(&app.config)).unwrap_or_default();
+    if path == "auth/register" && method == Method::POST {
         if app.config.network == "mainnet" {
+            return Err(ApiError(404, "NOT_FOUND"));
+        }
+        let display_name = text(&body, "displayName", 64)?;
+        if display_name.trim().is_empty() {
+            return Err(invalid());
+        }
+        let account_type = text(&body, "accountType", 16)?;
+        if !["individual", "freelancer", "merchant", "team", "business"].contains(&account_type) {
+            return Err(invalid());
+        }
+        let context = if account_type == "merchant" {
+            "merchant"
+        } else {
+            "customer"
+        };
+        let account_id = id("usr");
+        let token = session_token();
+        let csrf = id("csrf");
+        let expires = (Utc::now() + Duration::hours(8)).to_rfc3339();
+        sqlx::query("INSERT INTO accounts(id,display_name,account_type,context,created_at) VALUES(?,?,?,?,?)")
+            .bind(&account_id).bind(display_name.trim()).bind(account_type).bind(context).bind(now()).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO account_sessions(token_hash,context,csrf,expires_at,principal,account_id) VALUES(?,?,?,?,?,?)")
+            .bind(token_hash(&token)).bind(context).bind(&csrf).bind(&expires).bind(&account_id).bind(&account_id).execute(&mut *tx).await?;
+        tx.commit().await?;
+        let mut r = reply(
+            201,
+            &json!({"authenticated":true,"context":context,"accountId":account_id,"accountType":account_type,"agentId":null,"merchantId":if context=="merchant"{Some(account_id.as_str())}else{None},"csrfToken":csrf,"expiresAt":expires}),
+            false,
+        );
+        r.headers_mut().insert(
+            "set-cookie",
+            set_session_cookie(&app.config, &token).parse().unwrap(),
+        );
+        return Ok(r);
+    }
+    if path == "session/demo" && method == Method::POST {
+        // The broadcast-disabled live Testnet observer never exposes a demo
+        // identity endpoint. Historical CLI fixtures still run only on local
+        // non-public origins; the public-origin write gate above blocks them
+        // before this branch.
+        if app.config.network == "mainnet"
+            || app
+                .wallet
+                .as_ref()
+                .is_some_and(|wallet| wallet.workspace_only())
+        {
             return Err(ApiError(404, "NOT_FOUND"));
         }
         let role = text(&body, "context", 8)?;
@@ -481,7 +623,7 @@ async fn dispatch(
             .bind(cookie)
             .execute(&mut *tx)
             .await?;
-        let token = id("ses");
+        let token = session_token();
         let csrf = id("csrf");
         let expires = (Utc::now() + Duration::hours(8)).to_rfc3339();
         sqlx::query("INSERT INTO sessions VALUES(?,?,?,?)")
@@ -494,25 +636,43 @@ async fn dispatch(
         tx.commit().await?;
         let mut r = reply(
             200,
-            &json!({"context":role,"merchantId":if role=="merchant"{Some("mer_demo")}else{None},"agentId":null,"csrfToken":csrf,"expiresAt":expires}),
+            &json!({"authenticated":true,"context":role,"accountId":null,"accountType":null,"merchantId":if role=="merchant"{Some("mer_demo")}else{None},"agentId":null,"csrfToken":csrf,"expiresAt":expires}),
             false,
         );
-        r.headers_mut().insert("set-cookie",format!("__Host-veilpay_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800").parse().unwrap());
+        r.headers_mut().insert(
+            "set-cookie",
+            set_session_cookie(&app.config, &token).parse().unwrap(),
+        );
         return Ok(r);
     }
-    let session =
-        sqlx::query("SELECT context,csrf,expires_at FROM sessions WHERE token=? AND expires_at>?")
-            .bind(cookie)
-            .bind(now())
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(ApiError(401, "UNAUTHENTICATED"))?;
-    let role: String = session.get(0);
-    let principal = if role == "customer" {
-        "customer_demo"
+    let session = sqlx::query("SELECT context,csrf,expires_at,principal,account_id FROM account_sessions WHERE token_hash=? AND expires_at>?")
+        .bind(token_hash(&cookie)).bind(now()).fetch_optional(&mut *tx).await?;
+    let session = if let Some(session) = session {
+        Some(session)
     } else {
-        "mer_demo"
+        sqlx::query("SELECT context,csrf,expires_at,CASE context WHEN 'customer' THEN 'customer_demo' ELSE 'mer_demo' END as principal,NULL as account_id FROM sessions WHERE token=? AND expires_at>?")
+            .bind(&cookie).bind(now()).fetch_optional(&mut *tx).await?
     };
+    if path == "session" && method == Method::GET && session.is_none() {
+        // The isolated wallet-less regtest harness deliberately uses a 401 as
+        // its explicit fixture-bootstrap signal. Live Testnet and mainnet
+        // return the harmless state shape below instead, so production browser
+        // first load does not manufacture a console error or a demo session.
+        if app.config.network == "regtest" && app.wallet.is_none() {
+            return Err(ApiError(401, "UNAUTHENTICATED"));
+        }
+        // Session discovery is a non-sensitive state probe. Returning an
+        // explicit unauthenticated shape avoids a browser-console 401 during
+        // first load while every protected record route still fails closed.
+        return Ok(reply(
+            200,
+            &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}),
+            false,
+        ));
+    }
+    let session = session.ok_or(ApiError(401, "UNAUTHENTICATED"))?;
+    let role: String = session.get(0);
+    let principal: String = session.get(3);
     if write
         && h.get("x-csrf-token").and_then(|x| x.to_str().ok()) != Some(session.get::<&str, _>(1))
     {
@@ -521,9 +681,34 @@ async fn dispatch(
     if path == "session" && method == Method::GET {
         return Ok(reply(
             200,
-            &json!({"context":role,"csrfToken":session.get::<String,_>(1),"expiresAt":session.get::<String,_>(2),"agentId":null,"merchantId":if role=="merchant"{Some(principal)}else{None}}),
+            &json!({"authenticated":true,"context":role,"accountId":session.get::<Option<String>,_>(4),"accountType":null,"csrfToken":session.get::<String,_>(1),"expiresAt":session.get::<String,_>(2),"agentId":null,"merchantId":if role=="merchant"{Some(principal)}else{None}}),
             false,
         ));
+    }
+    if path == "session" && method == Method::DELETE {
+        // Revoke the bearer credential server-side before clearing the browser
+        // cookie. A copied or restored cookie cannot recover this session.
+        sqlx::query("DELETE FROM account_sessions WHERE token_hash=?")
+            .bind(token_hash(&cookie))
+            .execute(&mut *tx)
+            .await?;
+        // This only affects the legacy isolated fixture session table. It is
+        // harmless for authenticated sessions and keeps logout semantics clear.
+        sqlx::query("DELETE FROM sessions WHERE token=?")
+            .bind(&cookie)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        let mut r = reply(
+            200,
+            &json!({"authenticated":false,"context":null,"accountId":null,"accountType":null,"agentId":null,"merchantId":null,"csrfToken":null,"expiresAt":null}),
+            false,
+        );
+        r.headers_mut().insert(
+            "set-cookie",
+            clear_session_cookie(&app.config).parse().unwrap(),
+        );
+        return Ok(r);
     }
     let merchant = parts.first() == Some(&"merchant")
         || matches!(parts.get(2), Some(&"verification" | &"acknowledgment"));
@@ -546,7 +731,7 @@ async fn dispatch(
     };
     if let Some(k) = key
         && let Some(r) = sqlx::query("SELECT payload,status,body FROM idempotency WHERE principal=? AND operation=? AND key=?")
-            .bind(principal).bind(&operation).bind(k).fetch_optional(&mut *tx).await?
+            .bind(&principal).bind(&operation).bind(k).fetch_optional(&mut *tx).await?
     {
         if r.get::<String, _>(0) != payload {
             return Err(ApiError(409, "IDEMPOTENCY_MISMATCH"));
@@ -564,7 +749,7 @@ async fn dispatch(
         &parts,
         &method,
         &body,
-        principal,
+        &principal,
         uri.query(),
         &app,
     )
@@ -598,7 +783,8 @@ async fn dispatch(
     Ok(reply(status, &result, false))
 }
 async fn save_agent(c: &mut SqliteConnection, a: &Value) -> Result<()> {
-    put(c, "agent", a["id"].as_str().unwrap(), "customer_demo", a).await
+    let (owner, _) = get(c, "agent", a["id"].as_str().unwrap()).await?;
+    put(c, "agent", a["id"].as_str().unwrap(), &owner, a).await
 }
 fn evaluate(a: &Value, i: &Value, amount: i64, expires: &str, own: i64) -> Result<Vec<Value>> {
     let p = &a["policy"];
@@ -607,6 +793,14 @@ fn evaluate(a: &Value, i: &Value, amount: i64, expires: &str, own: i64) -> Resul
         |code: &str| violations.push(json!({"code":code,"message":code.replace('_'," ")}));
     if a["status"] == "paused" {
         add("AGENT_PAUSED")
+    }
+    if p.get("expiresAt")
+        .and_then(Value::as_str)
+        .map(date)
+        .transpose()?
+        .is_some_and(|expiry| expiry <= Utc::now())
+    {
+        add("POLICY_EXPIRED")
     }
     if amount > zat(p, "perTxLimitZat")? {
         add("CAP_EXCEEDED")
@@ -664,6 +858,7 @@ fn event(p: &mut Value, status: &str, kind: &str, note: &str) {
 }
 async fn decision(
     c: &mut SqliteConnection,
+    owner: &str,
     request: &Value,
     policy: &Value,
     violations: Vec<Value>,
@@ -674,21 +869,14 @@ async fn decision(
         "rejected"
     };
     let d = json!({"id":id("dec"),"result":result,"policyVersion":policy["version"],"evaluatedAt":now(),"violations":violations,"auditHash":format!("{:x}",Sha256::digest(json!([request,policy["version"],result]).to_string().as_bytes()))});
-    put(
-        c,
-        "decision",
-        d["id"].as_str().unwrap(),
-        "customer_demo",
-        &d,
-    )
-    .await?;
+    put(c, "decision", d["id"].as_str().unwrap(), owner, &d).await?;
     Ok(d)
 }
-async fn expire(c: &mut SqliteConnection) -> Result<()> {
-    for mut p in list(c, "payment", "customer_demo").await? {
+async fn expire(c: &mut SqliteConnection, owner: &str) -> Result<()> {
+    for mut p in list(c, "payment", owner).await? {
         if p["status"] == "authorized" && date(p["expiresAt"].as_str().unwrap())? <= Utc::now() {
             let aid = p["agentId"].as_str().unwrap();
-            let mut a = owned(c, "agent", aid, "customer_demo").await?;
+            let mut a = owned(c, "agent", aid, owner).await?;
             usage(&mut a, 0, -zat(&p, "amountZat")?)?;
             a["usage"]["pendingCount"] = json!(a["usage"]["pendingCount"].as_i64().unwrap() - 1);
             save_agent(c, &a).await?;
@@ -698,7 +886,7 @@ async fn expire(c: &mut SqliteConnection) -> Result<()> {
                 "status",
                 "Unsent mock request expired; reservation released",
             );
-            put(c, "payment", p["id"].as_str().unwrap(), "customer_demo", &p).await?;
+            put(c, "payment", p["id"].as_str().unwrap(), owner, &p).await?;
         }
     }
     Ok(())
@@ -741,13 +929,14 @@ async fn perform(
     query: Option<&str>,
     app: &App,
 ) -> Result<(u16, Value)> {
-    expire(c).await?;
+    expire(c, owner).await?;
     match (m.as_str(), p) {
+        ("GET", ["agents"]) => Ok((200, json!({"items":list(c, "agent", owner).await?}))),
         ("POST", ["agents"]) => {
             let name = text(b, "name", 64)?;
             let pol = policy(&b["policy"], 1)?;
             let a = json!({"id":id("agt"),"name":name,"status":"active","policy":pol,"usage":{"spentZat":"0","reservedZat":"0","remainingZat":pol["totalBudgetZat"],"approvedCount":0,"rejectedCount":0,"pendingCount":0},"createdAt":now()});
-            save_agent(c, &a).await?;
+            put(c, "agent", a["id"].as_str().unwrap(), owner, &a).await?;
             put(
                 c,
                 "policy",
@@ -790,6 +979,16 @@ async fn perform(
             Ok((200, pol))
         }
         ("POST", ["merchant", "invoices"]) => {
+            // A live backend without a verified merchant receiving capability
+            // must never mint the mock-only invoice shape.  Keeping fixture
+            // invoices behind the no-wallet branch prevents testnet users from
+            // mistaking an internal placeholder for a payable Zcash request.
+            if app.wallet.is_some()
+                && !app.wallet.as_ref().is_some_and(|w| w.requires_operator())
+                && app.config.frontend_origin == "http://localhost:3200"
+            {
+                return Err(ApiError(409, "INVALID_TRANSITION"));
+            }
             let reference = text(b, "reference", 64)?;
             let amount = zat(b, "amountZat")?;
             if reference.trim().is_empty() || !(1..=2_100_000_000_000_000).contains(&amount) {
@@ -857,7 +1056,7 @@ async fn perform(
             }
             .to_rfc3339();
             let violations = evaluate(&a, &i, amount, &expires, 0)?;
-            let d = decision(c, b, &a["policy"], violations).await?;
+            let d = decision(c, owner, b, &a["policy"], violations).await?;
             let status = d["result"].as_str().unwrap();
             let payment = json!({"id":id("pay"),"agentId":aid,"merchantId":i["merchantId"],"invoiceId":iid,"amountZat":b["amountZat"],"reference":b["reference"],"status":status,"decision":d,"timeline":[{"status":status,"kind":"status","at":now(),"note":if app.wallet.is_some(){"Policy evaluation only; no blockchain activity"}else{"Mock policy evaluation; no blockchain activity"}}],"createdAt":now(),"expiresAt":expires,"pool":null,"txid":null,"mockRef":if app.wallet.is_some(){Value::Null}else{json!(id("mock"))},"confirmations":0,"failure":null,"walletOperation":null});
             let count = if status == "authorized" {
@@ -941,6 +1140,12 @@ async fn perform(
         }
         ("GET", ["payments", pid]) => Ok((200, owned(c, "payment", pid, owner).await?)),
         ("POST", ["payments", pid, "execute"]) => {
+            // A policy decision is never wallet authority. Live deployments do
+            // not expose an execution transition while signing/sending review
+            // is incomplete; mock-only fixtures retain their isolated path.
+            if app.wallet.is_some() && app.config.frontend_origin == "http://localhost:3200" {
+                return Err(ApiError(409, "INVALID_TRANSITION"));
+            }
             let mut payment = owned(c, "payment", pid, owner).await?;
             if payment["walletOperation"].is_object() {
                 return Ok((202, payment));
@@ -961,7 +1166,7 @@ async fn perform(
                 amount,
             )?;
             let request = owned(c, "payment_request", pid, owner).await?;
-            payment["decision"] = decision(c, &request, &a["policy"], violations).await?;
+            payment["decision"] = decision(c, owner, &request, &a["policy"], violations).await?;
             if payment["decision"]["result"] == "rejected" {
                 usage(&mut a, 0, -amount)?;
                 a["usage"]["pendingCount"] =

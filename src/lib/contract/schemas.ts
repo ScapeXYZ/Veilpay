@@ -58,13 +58,22 @@ export const MainnetReadOnlySnapshot = z.object({
 });
 
 export const SessionContext = z.enum(["customer", "merchant"]);
+export const AccountType = z.enum(["individual", "freelancer", "merchant", "team", "business"]);
 
 export const Session = z.object({
-  context: SessionContext,
+  authenticated: z.boolean().default(true),
+  context: SessionContext.nullable(),
+  accountId: z.string().nullable().optional(),
+  accountType: AccountType.nullable().optional(),
   agentId: z.string().nullable().optional(),
   merchantId: z.string().nullable().optional(),
-  expiresAt: dateTime,
-  csrfToken: z.string(),
+  expiresAt: dateTime.nullable(),
+  csrfToken: z.string().nullable(),
+});
+
+export const AccountRegister = z.object({
+  displayName: z.string().min(1).max(64),
+  accountType: AccountType,
 });
 
 export const DemoSessionRequest = z.object({ context: SessionContext });
@@ -76,6 +85,8 @@ export const PolicyRules = z.object({
   totalBudgetZat: Zatoshi,
   allowedMerchantIds: z.array(z.string()).min(1),
   requestTtlSeconds: z.number().int().min(30).max(86400).optional(),
+  /** Once elapsed, the backend rejects every new request under this policy. */
+  expiresAt: dateTime.optional(),
 });
 
 export const Policy = PolicyRules.extend({
@@ -109,6 +120,7 @@ export const Agent = z.object({
   usage: PolicyUsage,
   createdAt: dateTime,
 });
+export const AgentList = z.object({ items: z.array(Agent) });
 
 export const AgentPatch = z.object({ status: AgentStatus });
 
@@ -140,6 +152,7 @@ export const ViolationCode = z.enum([
   "AMOUNT_MISMATCH",
   "INVOICE_NOT_PAYABLE",
   "POLICY_VERSION_CHANGED",
+  "POLICY_EXPIRED",
 ]);
 
 export const Violation = z.object({

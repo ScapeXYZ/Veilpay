@@ -4,9 +4,9 @@ import type { NextConfig } from "next";
  * Same-origin API: in live mode the browser calls /api/* and Next proxies it to the Rust
  * backend (VEILPAY_BACKEND_URL, server-side only), so the session cookie stays first-party.
  */
-// Submission builds are mainnet-observation builds. Keep the browser on a
-// same-origin API and use the local read-only backend unless deployment
-// configuration explicitly supplies another reviewed endpoint.
+// Keep the browser on a same-origin API. The proxy's separately configured
+// deployment network decides whether its narrow Testnet workspace writes are
+// available; the Rust backend repeats that policy.
 const backend = process.env.VEILPAY_BACKEND_URL ?? "http://127.0.0.1:4000/api";
 
 const securityHeaders = [
@@ -17,11 +17,15 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Test harnesses can build/start an isolated production output while a local
+  // development inspection server keeps using .next.
+  distDir: process.env.VEILPAY_DIST_DIR ?? ".next",
   reactStrictMode: true,
   poweredByHeader: false,
-  // Keep Next's project-local `tsc` build check enabled. The compiler-API
-  // worker can stall in restricted runners after compilation completes.
-  experimental: { useTypeScriptCli: true },
+  // Keep Next's TypeScript build check enabled. The CLI runner receives empty
+  // stdout from TypeScript 5.9 under this local Node 22 environment, so use
+  // Next's supported compiler-API checker rather than parsing that stream.
+  experimental: { useTypeScriptCli: false },
   turbopack: { root: import.meta.dirname },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

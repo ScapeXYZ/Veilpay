@@ -140,6 +140,26 @@ paths:
                 $ref: '#/components/schemas/Session'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - session
+      summary: Revoke the current authenticated session
+      description: Revokes the server-side bearer token and clears its HttpOnly cookie. Requires the current session and CSRF token.
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - session: []
   /agents:
     post:
       tags:
@@ -913,12 +933,26 @@ components:
     Session:
       type: object
       required:
+      - authenticated
       - context
       - expiresAt
       - csrfToken
       properties:
+        authenticated:
+          type: boolean
+        accountId:
+          type:
+          - string
+          - 'null'
+        accountType:
+          type:
+          - string
+          - 'null'
+          enum: [individual, freelancer, merchant, team, business, null]
         context:
-          type: string
+          type:
+          - string
+          - 'null'
           enum:
           - customer
           - merchant
@@ -931,10 +965,14 @@ components:
           - string
           - 'null'
         expiresAt:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
         csrfToken:
-          type: string
+          type:
+          - string
+          - 'null'
           description: Send as X-CSRF-Token on every state-changing request.
     AgentStatus:
       type: string
@@ -996,6 +1034,10 @@ components:
           minimum: 30
           maximum: 86400
           default: 900
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional policy expiry. The backend rejects new requests after this time.
     Policy:
       allOf:
       - $ref: '#/components/schemas/PolicyRules'
@@ -1093,6 +1135,7 @@ components:
       - AMOUNT_MISMATCH
       - INVOICE_NOT_PAYABLE
       - POLICY_VERSION_CHANGED
+      - POLICY_EXPIRED
     Violation:
       type: object
       required:

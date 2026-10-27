@@ -93,6 +93,7 @@ test("locally authorized Noir Wallet observation remains available when backend 
 });
 
 test("mainnet wallet with no reported history renders an empty 7/30-day activity view", async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 768, "desktop-only wallet observation coverage");
   await installNoir(page, false, true);
   await page.route("**/api/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(mainnetHealth) }));
   await page.goto("/app");

@@ -4,12 +4,12 @@ const tour = (page: Page) => page.getByTestId("onboarding");
 
 async function openHelp(page: Page) {
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
-    await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Help & demo" }).click();
+    await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Safety & settings" }).click();
   } else {
     await page.getByTestId("nav-more").click();
-    await page.getByRole("dialog", { name: "More navigation" }).getByRole("link", { name: "Help & demo" }).click();
+    await page.getByRole("dialog", { name: "More navigation" }).getByRole("link", { name: "Safety & settings" }).click();
   }
-  await expect(page.getByRole("heading", { name: /help/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /help & demo/i })).toBeVisible();
 }
 
 test("first visit to /app offers an optional tour that does not block the page", async ({ page }) => {
@@ -21,13 +21,16 @@ test("first visit to /app offers an optional tour that does not block the page",
   await expect(page.getByTestId("onboarding-back")).toBeDisabled();
 });
 
-test("Next and Back walk Spending rules, Payments, Merchant, Activity and Privacy, then Finish", async ({ page }) => {
+test("Next and Back walk the wallet, agent, policy, request, authorization, merchant, and activity journey", async ({ page }) => {
   await page.goto("/app");
   const steps: [RegExp, string][] = [
+    [/\/app\/wallet$/, "Wallet and privacy"],
+    [/\/app\/spending-rules$/, "Your payment agent"],
     [/\/app\/spending-rules$/, "Spending rules"],
-    [/\/app\/payments$/, "Payments"],
-    [/\/app\/merchant$/, "Merchant"],
-    [/\/app\/activity$/, "Activity and Privacy"],
+    [/\/app\/payments$/, "Payment requests"],
+    [/\/app\/payments$/, "Wallet authorization"],
+    [/\/app\/merchant$/, "Merchant verification"],
+    [/\/app\/activity$/, "Activity and receipts"],
   ];
   for (const [url, title] of steps) {
     await page.getByTestId("onboarding-next").click();
@@ -66,13 +69,13 @@ test("keyboard only: Tab reaches the controls, Enter advances, Escape closes", a
   await page.keyboard.press("Tab");
   await expect(page.getByTestId("onboarding-next")).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/app\/spending-rules$/);
-  await expect(tour(page).getByRole("heading", { name: "Spending rules" })).toBeFocused();
+  await expect(page).toHaveURL(/\/app\/wallet$/);
+  await expect(tour(page).getByRole("heading", { name: "Wallet and privacy" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(tour(page)).toHaveCount(0);
 });
 
-test("Don't show again persists across reloads and new sessions, and Help & demo restarts it", async ({ page, context }) => {
+test("Don't show again persists across reloads and new sessions, and Safety & settings restarts it", async ({ page, context }) => {
   await page.goto("/app");
   await page.getByTestId("onboarding-hide").check();
   await page.getByTestId("onboarding-skip").click();

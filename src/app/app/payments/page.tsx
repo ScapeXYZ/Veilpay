@@ -85,7 +85,7 @@ function Payments() {
 
 function NewButton() {
   const mode = useNetworkMode();
-  if (!mode.canWrite) return null;
+  if (!mode.canWrite || mode.kind === "disabled") return null;
   return (
     <Link href="/app/payments/new" data-testid="new-payment" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-400 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-accent-300">
       <Plus size={14} aria-hidden /> New request
@@ -97,9 +97,9 @@ export default function PaymentsPage() {
   const mode = useNetworkMode();
   return (
     <>
-      <PageHeader title="Payments" subtitle="Every payment your agent asked for, and where it stands. A payment with an unknown outcome is never resent." right={<NewButton />} />
+      <PageHeader title="Payment requests" subtitle={mode.kind === "disabled" ? "No payable requests can be created: merchant receiving addresses are not securely enrolled yet. Policy and wallet states remain separate." : "Every payment your agent asked for, and where it stands. A payment with an unknown outcome is never resent."} right={<NewButton />} />
       {mode.kind === "mainnet_readonly" || mode.kind === "unknown" ? <MainnetReadOnlyNotice area="Payments" unknown={mode.kind === "unknown"} /> : <RequireContext ctx="customer">
-        <Payments />
+        {mode.kind === "disabled" ? <Card testId="nonpayable-assessment-unavailable" title="Non-payable policy assessment unavailable"><p className="text-sm text-zinc-400">VeilPay will not turn a typed merchant ID or address into a pretend invoice. A policy evaluation needs a securely enrolled, genuine invoice; receiving-address ownership verification is not available in this release. No request, reservation, transaction, receipt, or settlement record was created.</p></Card> : <Payments />}
       </RequireContext>}
     </>
   );

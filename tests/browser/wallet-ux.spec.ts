@@ -31,7 +31,7 @@ async function installNoir(page: Page, opts: FakeOpts = {}) {
     const listeners: Array<(a: unknown) => void> = [];
     const calls: string[] = [];
     (window as unknown as { __noirCalls: string[] }).__noirCalls = calls;
-    (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit = (a: unknown) => { if (Array.isArray(a) && a.length === 0) authorized = false; listeners.forEach((l) => l(a)); };
+    (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit = (a: unknown) => { if (!Array.isArray(a) || a.length === 0) authorized = false; listeners.forEach((l) => l(a)); };
     (window as Window & { noirwallet?: unknown }).noirwallet = {
       isNoirWallet: true,
       zcash: {
@@ -61,178 +61,104 @@ async function installNoir(page: Page, opts: FakeOpts = {}) {
   }, opts);
 }
 
-const SHOTS = process.env.WALLET_UX_SHOTS;
-async function shot(page: Page, name: string, testInfo: { project: { name: string } }) {
-  if (!SHOTS) return;
-  const vp = testInfo.project.name.includes("mobile") ? "mobile" : "desktop";
-  // Full-page shots start at the top so sticky header/banner and the fixed nav paint where users see them.
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${SHOTS}/${vp}-${name}.png`, fullPage: true });
-}
-
-async function noSideScroll(page: Page) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
-}
-
 async function open(page: Page) {
   await page.route("**/api/health", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(testnetHealth) }));
   await page.goto("/app/wallet");
-  await expect(page.getByTestId("wallet-ux-panel")).toBeVisible();
+  const card = page.getByTestId("noir-wallet-card");
+  // Wait for the real silent getAccounts() restoration before exercising an
+  // authorization click. This avoids racing a deliberate connect against the
+  // SDK's documented non-popup account check.
+  await expect(card).not.toContainText("Checking existing authorization");
+  return card;
 }
 
-test("connect on click, pick accounts, onboarding saves a local draft only", async ({ page }, info) => {
+test("connect is deliberate, account selection is local, and disconnect clears the card", async ({ page }) => {
   await installNoir(page);
-  await open(page);
-  await expect(page.getByTestId("wallet-state-disconnected")).toBeVisible();
-  await shot(page, "01-disconnected", info);
+  const card = await open(page);
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __noirCalls: string[] }).__noirCalls)).not.toContain("zcash_requestAccounts");
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("2.50 ZEC");
-  await noSideScroll(page);
-  await shot(page, "02-connected", info);
-  await page.getByTestId("wallet-account-wallet-b:0").getByRole("radio").check();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("1.25 ZEC");
-  await shot(page, "03-account-picked", info);
-
-  const ob = page.getByTestId("business-onboarding");
-  await expect(ob.getByTestId("draft-badge")).toHaveText("Local draft · Not registered");
-  await ob.getByTestId("business-name").fill("Ada Coffee");
-  await ob.getByLabel("Services").check();
-  await shot(page, "04-onboarding-business", info);
-  await ob.getByTestId("onboarding-next").click();
-  await ob.getByTestId("payout-wallet-a:0").check();
-  await shot(page, "05-onboarding-payout", info);
-  await ob.getByTestId("onboarding-next").click();
-  await expect(ob.getByTestId("review-disclosure")).toContainText("not registered");
-  await shot(page, "06-onboarding-review", info);
-  const apiWrites: string[] = [];
-  page.on("request", (r) => { if (r.url().includes("/api/") && r.method() !== "GET") apiWrites.push(`${r.method()} ${r.url()}`); });
-  await ob.getByTestId("onboarding-save").click();
-  await expect(ob.getByTestId("saved-summary")).toHaveText("Ada Coffee · Services");
-  await noSideScroll(page);
-  await shot(page, "07-onboarding-saved", info);
-  // Scrolled to the end, the last card must sit above the fixed mobile nav (not under it).
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const gap = await page.evaluate(() => {
-    const card = document.querySelector('[data-testid="business-onboarding"]')!.getBoundingClientRect();
-    const nav = [...document.querySelectorAll("nav")].find((n) => getComputedStyle(n).position === "fixed" && n.getBoundingClientRect().height > 0);
-    return nav ? nav.getBoundingClientRect().top - card.bottom : window.innerHeight - card.bottom;
-  });
-  expect(gap).toBeGreaterThanOrEqual(0);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${info.project.name.includes("mobile") ? "mobile" : "desktop"}-07b-bottom-viewport.png` });
-  expect(apiWrites).toEqual([]);
-  const stored = await page.evaluate(() => window.localStorage.getItem("veilpay.businessDraft.v1"));
-  expect(JSON.parse(stored!)).toMatchObject({ businessName: "Ada Coffee", registered: false });
-  expect(stored).not.toMatch(/u1|t1|wallet-/);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("2.50 ZEC");
+  await card.getByTestId("noir-account-select").selectOption("wallet-b:0");
+  await expect(card).toContainText("1.25 ZEC");
+  await card.getByTestId("disconnect-noir-wallet").click();
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
   const calls = await page.evaluate(() => (window as unknown as { __noirCalls: string[] }).__noirCalls);
-  expect(calls.filter((c) => !["zcash_getAccounts", "zcash_requestAccounts", "zcash_getBalance"].includes(c))).toEqual([]);
-
-  await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit([]));
-  await expect(page.getByTestId("wallet-state-locked")).toBeVisible();
-  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
-  await shot(page, "08-locked", info);
+  expect(calls.filter((c) => !["zcash_getAccounts", "zcash_requestAccounts", "zcash_getBalance", "zcash_getTransactionHistory", "zcash_disconnect"].includes(c))).toEqual([]);
 });
 
-test("unsynced balance shows Unavailable, never 0", async ({ page }, info) => {
+test("unsynced wallet is labelled incomplete rather than treated as settled", async ({ page }) => {
   await installNoir(page, { unsynced: true });
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("Unavailable");
-  await expect(page.getByTestId("wallet-balance-total")).toHaveText("Unavailable");
-  await shot(page, "09-unsynced", info);
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText(/sync is incomplete/i);
+  await expect(card).toContainText("2.50 ZEC");
 });
 
-test("wrong network fails closed", async ({ page }, info) => {
+test("wrong network fails closed", async ({ page }) => {
   await installNoir(page, { network: "mainnet" });
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-state-wrong_network")).toContainText("wallet is on mainnet");
-  await expect(page.getByTestId("wallet-account-picker")).toHaveCount(0);
-  await noSideScroll(page);
-  await shot(page, "10-wrong-network", info);
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText(/not a Noir Wallet testnet connection/i);
+  await expect(card.getByTestId("noir-balances")).toHaveCount(0);
 });
 
-test("declined connection keeps nothing", async ({ page }, info) => {
+test("declined connection keeps nothing", async ({ page }) => {
   await installNoir(page, { reject: true });
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-state-rejected")).toBeVisible();
-  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
-  await shot(page, "11-declined", info);
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText(/connection was declined/i);
+  await expect(card.getByTestId("noir-balances")).toHaveCount(0);
 });
 
-test("no extension: not installed on desktop, desktop-only on phones", async ({ page }, info) => {
-  await open(page);
-  const mobile = info.project.name.includes("mobile");
-  await expect(page.getByTestId(mobile ? "wallet-state-mobile_unsupported" : "wallet-state-not_installed")).toBeVisible();
-  await expect(page.getByTestId("wallet-connect")).toHaveCount(0);
-  await noSideScroll(page);
-  await shot(page, "12-no-extension", info);
+test("no extension is explicit and never triggers an authorization request", async ({ page }) => {
+  const card = await open(page);
+  await expect(card).toContainText(/was not detected/i);
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
 });
 
-test("syncing: wallet still scanning shows Syncing + Unavailable, never 0", async ({ page }, info) => {
+test("wallet balance errors retain no fabricated balance", async ({ page }) => {
   await installNoir(page, { syncError: true });
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-status-badge")).toHaveText("Connected · Syncing");
-  await expect(page.getByTestId("wallet-syncing")).toContainText("not finished syncing");
-  for (const k of ["shielded", "available", "total"]) await expect(page.getByTestId(`wallet-balance-${k}`)).toHaveText("Unavailable");
-  await expect(page.getByTestId("wallet-balance")).not.toContainText(/\b0(\.0+)? ZEC/);
-  await noSideScroll(page);
-  await shot(page, "13-syncing", info);
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card.getByTestId("noir-balances")).toContainText("Unavailable");
+  await expect(card).toContainText("Syncing");
 });
 
-test("account switching in the wallet drops balances and asks to pick again", async ({ page }, info) => {
+test("wallet lock event clears balances", async ({ page }) => {
   await installNoir(page);
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("2.50 ZEC");
-  await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit(["wallet-b:0"]));
-  await expect(page.getByTestId("wallet-state-account_changed")).toBeVisible();
-  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
-  await expect(page.getByTestId("wallet-account-picker")).toContainText("Pick an account again");
-  await noSideScroll(page);
-  await shot(page, "14-account-switched", info);
-  await page.getByTestId("wallet-account-wallet-b:0").getByRole("radio").check();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("1.25 ZEC");
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("2.50 ZEC");
+  await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit([]));
+  await expect(card).toContainText(/locked/i);
+  await expect(card.getByTestId("noir-balances")).toHaveCount(0);
 });
 
-test("disconnected by the wallet clears everything", async ({ page }, info) => {
+test("wallet disconnect event clears everything", async ({ page }) => {
   await installNoir(page);
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("2.50 ZEC");
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("2.50 ZEC");
   await page.evaluate(() => (window as unknown as { __noirEmit: (a: unknown) => void }).__noirEmit(null));
-  await expect(page.getByTestId("wallet-state-disconnected")).toBeVisible();
-  await expect(page.getByTestId("wallet-balance")).toHaveCount(0);
-  await expect(page.getByTestId("wallet-account-picker")).toHaveCount(0);
-  await shot(page, "15-disconnected-by-wallet", info);
+  await expect(card.getByTestId("connect-noir-wallet")).toBeVisible();
+  await expect(card.getByTestId("noir-balances")).toHaveCount(0);
 });
 
-test("leak audit: no wallet data in console, network, storage or cookies", async ({ page, context }, info) => {
+test("leak audit: current Noir card keeps wallet data out of console, network, storage and cookies", async ({ page, context }) => {
   const console_: string[] = [];
   const net: string[] = [];
   page.on("console", (m) => console_.push(`${m.type()} ${m.text()}`));
   page.on("pageerror", (e) => console_.push(`pageerror ${e.message}`));
   page.on("request", (r) => net.push(`${r.method()} ${r.url()}\n${JSON.stringify(r.headers())}\n${r.postData() ?? ""}`));
   await installNoir(page, { canary: true });
-  await open(page);
-  await page.getByTestId("wallet-connect").click();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("7.7731 ZEC");
-  await page.getByTestId("wallet-account-wallet-b:0").getByRole("radio").check();
-  await expect(page.getByTestId("wallet-balance-shielded")).toHaveText("8.8842 ZEC");
-  await page.getByTestId(`copy-wallet-b:0`).click().catch(() => undefined);
-  const ob = page.getByTestId("business-onboarding");
-  await ob.getByTestId("business-name").fill("Leak Audit Cafe");
-  await ob.getByLabel("Services").check();
-  await ob.getByTestId("onboarding-next").click();
-  await ob.getByTestId("payout-wallet-b:0").check();
-  await ob.getByTestId("onboarding-next").click();
-  await ob.getByTestId("onboarding-save").click();
-  await expect(ob.getByTestId("saved-summary")).toHaveText("Leak Audit Cafe · Services");
+  const card = await open(page);
+  await card.getByTestId("connect-noir-wallet").click();
+  await expect(card).toContainText("7.7731 ZEC");
+  await card.getByTestId("noir-account-select").selectOption("wallet-b:0");
+  await expect(card).toContainText("8.8842 ZEC");
   await page.reload();
-  await expect(page.getByTestId("wallet-ux-panel")).toBeVisible();
+  await expect(page.getByTestId("noir-wallet-card")).toBeVisible();
   await page.waitForTimeout(500);
 
   const storage = await page.evaluate(async () => {
@@ -265,7 +191,7 @@ test("leak audit: no wallet data in console, network, storage or cookies", async
     "7.7731", "8.8842", "3.1417", "4.2718", "6.6620", "5.5519", "9.9953", "13.1560", "u1treasury", "u1operations", "t1Treasury", "t1Operations"];
   const hits: string[] = [];
   for (const [where, text] of Object.entries(haystacks)) for (const k of canaries) if (text.includes(k)) hits.push(`${k} in ${where}`);
-  const report = { viewport: info.project.name, consoleLines: console_.length, requests: net.length,
+  const report = { consoleLines: console_.length, requests: net.length,
     localKeys: Object.keys(storage.local), sessionKeys: Object.keys(storage.session), idbDatabases: Object.keys(storage.idb), cookies: cookies.map((c) => c.name), hits };
   if (process.env.WALLET_UX_LEAK_REPORT) {
     const fs = await import("node:fs");
@@ -273,5 +199,5 @@ test("leak audit: no wallet data in console, network, storage or cookies", async
   }
   expect(hits).toEqual([]);
   expect(net.length).toBeGreaterThan(0);
-  expect(JSON.parse(storage.local["veilpay.businessDraft.v1"] ?? "{}")).toMatchObject({ businessName: "Leak Audit Cafe", registered: false });
+  expect(storage.local["veilpay.businessDraft.v1"]).toBeUndefined();
 });

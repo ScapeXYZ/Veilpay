@@ -36,7 +36,7 @@ describe("network detection", () => {
     expect(expectedWalletNetwork("testnet_manual")).toBe("testnet");
     expect(expectedWalletNetwork("mock")).toBeNull();
     expect(expectedWalletNetwork("unknown")).toBeNull();
-    expect(expectedWalletNetwork("disabled")).toBeNull();
+    expect(expectedWalletNetwork("disabled")).toBe("testnet");
   });
 });
 

@@ -26,6 +26,7 @@ export function PolicySheet({ agent: a }: { agent: Agent }) {
     { k: "Max per payment", v: <Zec zat={a.policy.perTxLimitZat} />, testId: "sheet-cap" },
     { k: "Approved merchants", v: a.policy.allowedMerchantIds.length ? <span className="font-mono text-[13px] break-all">{a.policy.allowedMerchantIds.join(", ")}</span> : "None", testId: "sheet-merchants" },
     { k: "Approval time limit", v: a.policy.requestTtlSeconds ? `${a.policy.requestTtlSeconds}s` : "Server default", testId: "sheet-ttl" },
+    { k: "Policy expiration", v: a.policy.expiresAt ? fmtTime(a.policy.expiresAt) : "No expiration", testId: "sheet-expiry" },
     { k: "Daily limit", v: <span className="text-zinc-400">Not available yet</span>, testId: "sheet-daily" },
   ];
   return (

@@ -2,7 +2,7 @@
 
 import { PlugZap, RefreshCw, ShieldCheck, Unplug, Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isMainnetNoirAccount, NoirWalletAdapter, noirWalletErrorState, type NoirAccount, type NoirBalance, type NoirTransaction, waitForNoirWallet } from "@/lib/noir-wallet";
+import { areNoirAccountsOnNetwork, NoirWalletAdapter, noirWalletErrorState, type NoirAccount, type NoirBalance, type NoirTransaction, type NoirWalletNetwork, waitForNoirWallet } from "@/lib/noir-wallet";
 import { useNetworkMode } from "@/lib/api/data-source";
 import { NoirWalletActivity } from "./noir-wallet-activity";
 import { Badge, Button, Card, Notice } from "./ui";
@@ -20,13 +20,20 @@ function amount(value: string | null | undefined) {
 }
 
 /**
- * A client-only, mainnet-only, read-only connection card. It is not rendered
- * for testnet or mock modes, keeping real wallet observation separate from
- * fixtures and simulations.
+ * Client-only, read-only wallet observation. It accepts only the Noir Wallet
+ * extension whose returned addresses match the backend-confirmed network.
+ * Wallet data remains in this component's memory and never reaches VeilPay.
  */
 export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowWhenBackendUnavailable?: boolean }) {
   const mode = useNetworkMode();
-  const walletObservationAllowed = mode.kind === "mainnet_readonly" || (allowWhenBackendUnavailable && mode.kind === "unknown");
+  const expectedNetwork: NoirWalletNetwork | null = mode.kind === "mainnet_readonly" ? "mainnet" : mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled" ? "testnet" : null;
+  // Unknown health has no reliable testnet/mainnet contract. The existing
+  // mainnet offline observation surface is intentionally retained only when
+  // its caller explicitly asks for it; it still rejects every non-mainnet
+  // account rather than guessing from a stale session.
+  const offlineMainnetObservation = allowWhenBackendUnavailable && mode.kind === "unknown";
+  const walletObservationAllowed = expectedNetwork !== null || offlineMainnetObservation;
+  const accountNetwork: NoirWalletNetwork = expectedNetwork ?? "mainnet";
   const [state, setState] = useState<State>("checking");
   const [connected, setConnected] = useState<Connected | null>(null);
   const adapter = useRef<NoirWalletAdapter | null>(null);
@@ -42,7 +49,7 @@ export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowW
       clear(nullMeansLocked ? "locked" : "disconnected");
       return;
     }
-    if (connection.accounts.some((account) => !isMainnetNoirAccount(account))) {
+    if (!areNoirAccountsOnNetwork(connection.accounts, accountNetwork)) {
       clear("wrong_network");
       return;
     }
@@ -67,7 +74,7 @@ export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowW
       if (next === "locked") clear(next);
       else setState(next);
     }
-  }, [clear]);
+  }, [accountNetwork, clear]);
 
   useEffect(() => {
     if (!walletObservationAllowed) return;
@@ -150,7 +157,7 @@ export function NoirWalletCard({ allowWhenBackendUnavailable = false }: { allowW
       {state === "unavailable" && <Notice tone="neutral" title="Noir Wallet was not detected on this page">Confirm that the official extension is enabled and allowed to access this site, then reload. VeilPay will not request access automatically.</Notice>}
       {state === "disconnected" && <p className="text-sm text-zinc-400">Connect an account to view Noir Wallet-reported balances. VeilPay cannot spend, sign, or broadcast from this screen.</p>}
       {state === "locked" && <p className="text-sm text-amber-200">Noir Wallet is locked. Unlock it in the extension, then reconnect.</p>}
-      {state === "wrong_network" && <Notice tone="neutral" title="This is not a Noir Wallet mainnet connection">VeilPay only observes Zcash mainnet. Install and unlock Noir Wallet&apos;s mainnet extension, then reconnect. No wallet data was retained.</Notice>}
+      {state === "wrong_network" && <Notice tone="neutral" title={`This is not a Noir Wallet ${accountNetwork} connection`}>This VeilPay workspace expects Noir Wallet&apos;s {accountNetwork} extension. No wallet data was retained; switch extensions, then reconnect.</Notice>}
       {state === "rejected" && <p className="text-sm text-zinc-400">Connection was declined. No account information was retained.</p>}
       {state === "failed" && <p className="text-sm text-rose-200">Noir Wallet could not provide account information. Nothing was saved or sent to VeilPay.</p>}
       {(state === "checking" || state === "connecting") && <p className="flex items-center gap-2 text-sm text-zinc-400"><RefreshCw size={14} className="animate-spin" aria-hidden /> Checking existing authorization without opening the wallet…</p>}

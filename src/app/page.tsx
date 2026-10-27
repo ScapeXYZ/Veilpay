@@ -51,13 +51,14 @@ export default function Landing() {
   // The preview contains fixed practice figures. Never render it while server
   // health is absent or the app is observing mainnet.
   if (mode.kind !== "mock") {
+    const testnet = mode.kind === "testnet" || mode.kind === "testnet_manual" || mode.kind === "disabled";
     return (
       <PublicShell>
         <section className="veil">
           <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-16 lg:px-8 lg:py-24">
-            <Badge tone="info">Zcash mainnet observer</Badge>
-            <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-zinc-50 sm:text-5xl">VeilPay is read-only.</h1>
-            <p className="max-w-xl text-lg leading-relaxed text-zinc-300">Connect Noir Wallet to view wallet-reported mainnet balances and activity. VeilPay cannot sign, send, or broadcast.</p>
+            <Badge tone="info">{testnet ? "Zcash testnet · Test funds only" : mode.kind === "mainnet_readonly" ? "Zcash mainnet observer" : "Network status unavailable"}</Badge>
+            <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-zinc-50 sm:text-5xl">{testnet ? "Policy-controlled payments, tested safely." : "VeilPay is read-only."}</h1>
+            <p className="max-w-xl text-lg leading-relaxed text-zinc-300">{testnet ? "Connect Noir Wallet to view its wallet-reported testnet balances and activity. This release does not sign, send, or broadcast from your browser." : "Connect Noir Wallet to view wallet-reported mainnet balances and activity. VeilPay cannot sign, send, or broadcast."}</p>
             <Link href="/app" className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-accent-300">Open VeilPay <ArrowRight size={15} aria-hidden /></Link>
           </div>
         </section>

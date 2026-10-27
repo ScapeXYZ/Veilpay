@@ -7,7 +7,7 @@ import type { z } from "zod";
 import * as S from "@/lib/contract/schemas";
 import { ApiError, type ApiClient } from "./types";
 
-type Method = "GET" | "POST" | "PUT" | "PATCH";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export class LiveApiClient implements ApiClient {
   readonly mode = "live" as const;
@@ -66,9 +66,21 @@ export class LiveApiClient implements ApiClient {
     return s;
   }
 
+  async registerAccount(body: z.infer<typeof S.AccountRegister>) {
+    const s = await this.call(S.Session, "POST", "/auth/register", { body: S.AccountRegister.parse(body) });
+    this.csrfToken = s.csrfToken;
+    return s;
+  }
+
   async getSession() {
     const s = await this.call(S.Session, "GET", "/session");
     this.csrfToken = s.csrfToken;
+    return s;
+  }
+
+  async logout() {
+    const s = await this.call(S.Session, "DELETE", "/session", { csrf: true });
+    this.csrfToken = null;
     return s;
   }
 
@@ -79,6 +91,10 @@ export class LiveApiClient implements ApiClient {
 
   createAgent(body: { name: string; policy: S.PolicyRules }, idempotencyKey: string) {
     return this.call(S.Agent, "POST", "/agents", { body: S.AgentCreate.parse(body), idempotencyKey, csrf: true });
+  }
+
+  listAgents() {
+    return this.call(S.AgentList, "GET", "/agents");
   }
 
   getAgent(agentId: string) {

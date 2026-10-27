@@ -80,6 +80,12 @@ pub trait WalletAdapter: Send + Sync {
     fn requires_operator(&self) -> bool {
         false
     }
+    /// True only for the deliberately broadcast-disabled live adapter. This
+    /// lets the HTTP boundary expose workspace management without also exposing
+    /// historical invoice/payment test seams.
+    fn workspace_only(&self) -> bool {
+        false
+    }
     /// Read-only data from a dedicated viewing wallet. Implementations must never
     /// prepare, sign, submit, or create wallets as a side effect.
     fn read_only_snapshot(&self) -> crate::zcash::DataFuture<'_, ReadOnlySnapshot> {
@@ -118,6 +124,9 @@ impl ZingoWallet {
 impl WalletAdapter for ZingoWallet {
     fn network(&self) -> Network {
         self.network
+    }
+    fn workspace_only(&self) -> bool {
+        true
     }
     fn submit<'a>(&'a self, intent: &'a SendIntent) -> WalletFuture<'a> {
         Box::pin(async move {

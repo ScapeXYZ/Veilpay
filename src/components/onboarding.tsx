@@ -10,7 +10,7 @@ import { readUiPref, writeUiPref, type UiPrefKey } from "@/lib/ui-prefs";
 /**
  * Optional first-time tour for /app. It never blocks the page (non-modal), opens by itself only on the
  * first visit to /app, and can always be skipped. "Don't show this again" and finishing the tour are
- * remembered in localStorage; Skip only closes it for this browser session. Help & demo can restart it.
+ * remembered in localStorage; Skip only closes it for this browser session. Safety & settings can restart it.
  */
 export const ONBOARDING_STORAGE_KEY: UiPrefKey = "veilpay.onboarding.v1"; // "hidden" | "done"
 export const ONBOARDING_SESSION_KEY: UiPrefKey = "veilpay.onboarding.session"; // "closed"
@@ -22,35 +22,56 @@ export const ONBOARDING_STEPS = [
     href: "/app",
     icon: Sparkles,
     title: "Welcome to VeilPay",
-    body: "VeilPay lets an AI agent pay invoices only within limits you set. This short tour shows where things are. Practice mode uses simulations; the mainnet overview is read-only and shows only data Noir Wallet reports. Neither view enables sending from this app.",
+    body: "VeilPay lets you give an AI agent limited payment authority, never open-ended access to funds. This tour shows the policy, request, wallet, and merchant boundaries. It does not grant a wallet permission or send money.",
+  },
+  {
+    id: "wallet",
+    href: "/app/wallet",
+    icon: ShieldCheck,
+    title: "Wallet and privacy",
+    body: "Connect the Noir Wallet extension only to view its reported testnet addresses, balances, sync state, and activity. VeilPay never receives seed phrases, spending keys, viewing keys, or wallet memos.",
+  },
+  {
+    id: "agent",
+    href: "/app/spending-rules",
+    icon: Sparkles,
+    title: "Your payment agent",
+    body: "A payment agent is separate from your wallet. Its identity, status, assigned policy, and request history must come from the VeilPay backend; unavailable data is shown as unavailable, never invented.",
   },
   {
     id: "rules",
     href: "/app/spending-rules",
     icon: ShieldCheck,
     title: "Spending rules",
-    body: "Set a max per payment, a total budget and the merchants your agent may pay. Every payment request is checked against these rules before anything happens.",
+    body: "Set a maximum per payment, total budget, approved merchants, and expiry. VeilPay evaluates every request against the saved policy. A policy editor is shown only when the connected backend can enforce it.",
   },
   {
-    id: "payments",
+    id: "requests",
     href: "/app/payments",
     icon: ListOrdered,
-    title: "Payments",
-    body: "Every request your agent made, newest first. Approved, sent and paid are separate steps, and a blocked request shows exactly which rule it broke.",
+    title: "Payment requests",
+    body: "Each request records the agent, recipient, amount, and policy evaluation. Approved, prepared, sent, confirmed, and merchant-verified are distinct states; a request is never called paid without evidence.",
+  },
+  {
+    id: "authorization",
+    href: "/app/payments",
+    icon: ShieldCheck,
+    title: "Wallet authorization",
+    body: "Wallet observation is not spending authorization. This release does not request signatures or broadcast from Noir Wallet. Any future testnet execution must remain explicitly user-approved and pass a separate security review.",
   },
   {
     id: "merchant",
     href: "/app/merchant",
     icon: Store,
-    title: "Merchant",
-    body: "The merchant side creates invoices and checks whether they were paid. It opens as a separate demo session, not a real sign-in.",
+    title: "Merchant verification",
+    body: "Merchants can create requests and inspect the evidence the backend actually reports. Shielded payment privacy limits public details, but VeilPay does not claim zero-knowledge or selective-disclosure proofs unless independently demonstrated.",
   },
   {
     id: "activity",
     href: "/app/activity",
     icon: Activity,
-    title: "Activity and Privacy",
-    body: "Activity is the full payment history with filters. Privacy explains who is meant to see what about a payment. Both are under More.",
+    title: "Activity and receipts",
+    body: "Wallet activity remains wallet-reported and local. VeilPay payment records, policy decisions, budgets, and merchant settlement evidence are separate records and are never substituted for one another.",
   },
 ] as const;
 
@@ -93,8 +114,8 @@ export function OnboardingProvider({ children, disabled = false }: { children: R
   const [active, setActive] = useState<boolean | null>(null);
 
   const autoEligible = snap.ready && !snap.stored && !snap.sessionClosed;
-  // The tour describes the isolated practice workflow. The shell disables it
-  // on confirmed mainnet instead of mixing simulation language into that view.
+  // Mainnet and unknown-health views cannot provide the testnet workflow, so
+  // do not mix a payment-journey tour into their read-only observation views.
   const open = !disabled && (active === true || (active === null && autoEligible && path === "/app"));
 
   const go = useCallback(
