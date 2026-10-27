@@ -27,6 +27,7 @@ export function deploymentNetworkOf(value = process.env.VEILPAY_DEPLOYMENT_NETWO
 function isTestnetWorkspaceWrite(pathname: string, method: string): boolean {
   const normalized = method.toUpperCase();
   if (normalized === "POST" && (pathname === "/api/auth/register" || pathname === "/api/agents")) return true;
+  if (normalized === "POST" && (/^\/api\/agents\/[^/]+\/credentials(?:\/[^/]+\/(?:revoke|rotate))?$/.test(pathname) || pathname === "/api/v1/agent/payment-evaluations")) return true;
   if (normalized === "DELETE" && pathname === "/api/session") return true;
   if (normalized === "PATCH" && /^\/api\/agents\/[^/]+$/.test(pathname)) return true;
   return normalized === "PUT" && /^\/api\/agents\/[^/]+\/policy$/.test(pathname);

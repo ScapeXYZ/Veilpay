@@ -2,6 +2,8 @@ import type {
   Acknowledgment,
   AccountRegister,
   Agent,
+  AgentCredentialIssued,
+  AgentCredentialList,
   AgentList,
   AgentStatus,
   ApiErrorBody,
@@ -36,6 +38,10 @@ export interface ApiClient {
   listAgents(): Promise<z.infer<typeof AgentList>>;
   createAgent(body: { name: string; policy: PolicyRules }, idempotencyKey: string): Promise<Agent>;
   getAgent(agentId: string): Promise<Agent>;
+  listAgentCredentials(agentId: string): Promise<z.infer<typeof AgentCredentialList>>;
+  createAgentCredential(agentId: string): Promise<z.infer<typeof AgentCredentialIssued>>;
+  revokeAgentCredential(agentId: string, credentialId: string): Promise<void>;
+  rotateAgentCredential(agentId: string, credentialId: string): Promise<z.infer<typeof AgentCredentialIssued>>;
   setAgentStatus(agentId: string, status: AgentStatus): Promise<Agent>;
   getPolicy(agentId: string): Promise<Policy>;
   putPolicy(agentId: string, body: PolicyUpdate): Promise<Policy>;

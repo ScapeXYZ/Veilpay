@@ -88,6 +88,12 @@ async fn decode(response: axum::response::Response) -> Reply {
         cookie,
     }
 }
+async fn agent_call(router: &Router, credential: &str, key: &str, body: Value) -> Reply {
+    let response = router.clone().oneshot(Request::builder().method("POST").uri("/api/v1/agent/payment-evaluations")
+        .header("authorization", format!("Bearer {credential}")).header("idempotency-key", key)
+        .header("content-type", "application/json").body(Body::from(body.to_string())).unwrap()).await.unwrap();
+    decode(response).await
+}
 impl Fixture {
     async fn new() -> Self {
         Self::at("sqlite::memory:").await
@@ -880,6 +886,25 @@ async fn register_live(router: &Router, origin: &str, name: &str, account_type: 
         cookie: registered.cookie.unwrap().split(';').next().unwrap().into(),
         csrf: registered.body["csrfToken"].as_str().unwrap().into(),
     }
+}
+
+#[tokio::test]
+async fn universal_agent_credentials_are_scoped_revocable_and_idempotent() {
+    let f = Fixture::new().await;
+    let a = f.agent("100", "500").await;
+    let aid = a["id"].as_str().unwrap();
+    let issued = call(&f.router, "POST", &format!("agents/{aid}/credentials"), Some(&f.customer), Some("credential-create"), json!({})).await;
+    assert_eq!(issued.status, 201, "{}", issued.body);
+    let token = issued.body["token"].as_str().unwrap();
+    let allowed = agent_call(&f.router, token, "agent-eval-1", json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"})).await;
+    assert_eq!(allowed.status, 201); assert_eq!(allowed.body["allowed"], true);
+    let replay = agent_call(&f.router, token, "agent-eval-1", json!({"merchantId":"mer_demo","amountZat":"60","reference":"proposal"})).await;
+    assert_eq!(replay.status, 201); assert!(replay.replay);
+    let denied = agent_call(&f.router, token, "agent-eval-2", json!({"merchantId":"other","amountZat":"101","reference":"proposal"})).await;
+    assert_eq!(denied.body["allowed"], false); assert_eq!(denied.body["reasonCode"], "CAP_EXCEEDED");
+    let cid = issued.body["credential"]["id"].as_str().unwrap();
+    assert_eq!(call(&f.router,"POST",&format!("agents/{aid}/credentials/{cid}/revoke"),Some(&f.customer),Some("credential-revoke"),json!({})).await.status,200);
+    assert_eq!(agent_call(&f.router, token, "agent-eval-3", json!({"merchantId":"mer_demo","amountZat":"1","reference":"proposal"})).await.status,401);
 }
 
 #[tokio::test]

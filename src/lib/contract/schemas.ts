@@ -76,6 +76,13 @@ export const AccountRegister = z.object({
   accountType: AccountType,
 });
 
+export const AgentCredential = z.object({
+  id: z.string(), hint: z.string(), createdAt: dateTime.optional(), expiresAt: dateTime, revokedAt: dateTime.nullable().optional(), lastUsedAt: dateTime.nullable().optional(),
+});
+export const AgentCredentialIssued = z.object({ credential: AgentCredential, token: z.string() });
+export const AgentCredentialList = z.object({ items: z.array(AgentCredential) });
+export const AgentCredentialRevoked = z.object({ id: z.string(), revoked: z.literal(true) });
+
 export const DemoSessionRequest = z.object({ context: SessionContext });
 
 export const AgentStatus = z.enum(["active", "paused"]);

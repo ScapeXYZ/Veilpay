@@ -308,6 +308,11 @@ export class MockApiClient implements ApiClient, MockControls {
     return this.respond(S.Agent, this.agent());
   }
 
+  async listAgentCredentials(): Promise<z.infer<typeof S.AgentCredentialList>> { return { items: [] }; }
+  async createAgentCredential(): Promise<z.infer<typeof S.AgentCredentialIssued>> { return err(409, "INVALID_TRANSITION", "Credentials are unavailable in fixtures."); }
+  async revokeAgentCredential(): Promise<void> { return err(409, "INVALID_TRANSITION", "Credentials are unavailable in fixtures."); }
+  async rotateAgentCredential(): Promise<z.infer<typeof S.AgentCredentialIssued>> { return err(409, "INVALID_TRANSITION", "Credentials are unavailable in fixtures."); }
+
   async setAgentStatus(agentId: string, status: S.AgentStatus) {
     this.requireCtx("customer");
     if (agentId !== AGENT_ID) err(404, "NOT_FOUND", "Agent not found.");

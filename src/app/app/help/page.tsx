@@ -75,6 +75,10 @@ export default function HelpPage() {
         <Answer icon={<ShieldCheck size={16} aria-hidden />} q="Is the wallet balance my agent's money?">No. The wallet is shared, so VeilPay does not show its balance as your agent&apos;s funds. Your agent&apos;s limit is the budget in Spending rules.</Answer>
       </Card>
 
+      <Card title="Universal Agent API" testId="agent-api" >
+        <p id="agent-api" className="text-sm text-zinc-400">Any AI agent that can make authenticated HTTPS requests can request a policy decision with a restricted agent credential. It cannot access Noir Wallet, change rules, sign, send, or broadcast. See the <a className="text-accent-300 underline" href="https://github.com/ScapeXYZ/Veilpay/blob/main/docs/UNIVERSAL_AGENT_API.md">versioned integration guide</a> for generic HTTP, Python, JavaScript, and optional OpenClaw examples.</p>
+      </Card>
+
       {session?.authenticated && (
         <Card title="Session" testId="session-settings">
           <p className="text-sm text-zinc-400">This logs out of the VeilPay workspace only. It does not disconnect Noir Wallet or send wallet information to VeilPay.</p>
