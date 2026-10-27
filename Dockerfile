@@ -9,6 +9,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/backend/target \
     mkdir -p backend/src && printf 'fn main() {}\n' > backend/src/main.rs && cargo build --release --locked --manifest-path backend/Cargo.toml
 COPY backend ./backend
+# transport.rs verifies these exact, repository-tracked patch bytes at compile
+# time via include_bytes!(), resolved relative to /build/backend/src.
+COPY scripts/patches ./scripts/patches/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/backend/target \
     cargo build --release --locked --manifest-path backend/Cargo.toml
