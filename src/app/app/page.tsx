@@ -4,13 +4,13 @@ import { AlertTriangle, ArrowRight, Ban, CalendarClock, Eye, PlayCircle, Receipt
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PaymentBadge } from "@/components/payment";
-import { AgentSummary } from "@/components/agent-summary";
-import { PageHeader, RequireContext } from "@/components/shell";
+import { AgentSummary, WorkspaceOnboarding } from "@/components/agent-summary";
+import { PageHeader } from "@/components/shell";
 import { SourceTag } from "@/components/source";
 import { LiveChartWithheld, SpendingChart } from "@/components/spending-chart";
-import { Badge, Card, ErrorBox, Meter, Notice, Skeleton, Zec } from "@/components/ui";
+import { Badge, Button, Card, ErrorBox, Meter, Notice, Skeleton, Zec } from "@/components/ui";
 import { useNetworkMode } from "@/lib/api/data-source";
-import { errorText, useAgent, useHealth, usePayments, useSelectedAgent } from "@/lib/api/hooks";
+import { errorText, useAgent, useHealth, usePayments, useSelectedAgent, useSession } from "@/lib/api/hooks";
 import type { Payment } from "@/lib/contract/schemas";
 import { fmtTime, lastUpdated, unresolvedOf } from "@/lib/present";
 import { pctZat } from "@/lib/zat";
@@ -229,11 +229,24 @@ function BackendUnavailableWalletObservation() {
   );
 }
 
+/** Keep registration outside the protected dashboard so a new visitor can
+ * actually reach the endpoint that creates a workspace session. */
+function TestnetWorkspaceOverview() {
+  const { data: session, isLoading, error, refetch } = useSession();
+  if (isLoading) return <Skeleton className="h-56" />;
+  if (error || !session) return <ErrorBox>
+    <p>Could not check your workspace session. {errorText(error)}</p>
+    <Button variant="secondary" onClick={() => void refetch()}>Try again</Button>
+  </ErrorBox>;
+  if (!session.authenticated) return <WorkspaceOnboarding />;
+  return <Dashboard />;
+}
+
 function Overview() {
   const mode = useNetworkMode();
   if (mode.kind === "mainnet_readonly") return <MainnetReadOnlyWallet />;
   if (mode.kind === "unknown") return <BackendUnavailableWalletObservation />;
-  return <RequireContext ctx="customer"><Dashboard /></RequireContext>;
+  return <TestnetWorkspaceOverview />;
 }
 
 export default function DashboardPage() {

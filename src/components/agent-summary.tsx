@@ -11,30 +11,22 @@ import { pctZat } from "@/lib/zat";
 import { SourceTag } from "./source";
 import { Badge, Button, Card, ErrorBox, Meter, Skeleton, Zec } from "./ui";
 
-function AgentSetup() {
-  const mode = useNetworkMode();
-  const { data: session } = useSession();
-  if (mode.kind !== "mock") {
-    if (!session?.authenticated) return <AccountSetup />;
-    return (
-      <Card title="No payment agent configured" testId="agent-setup">
-        <p className="text-sm text-zinc-400">No agent record is available in this workspace. VeilPay will not create a default agent, budget, merchant list, or payment history for you.</p>
-        <p className="mt-3 text-xs text-zinc-500">Agent creation and account ownership need a reviewed testnet identity boundary before this control can be offered.</p>
-      </Card>
-    );
-  }
-  return <MockAgentSetup />;
-}
-
-function AccountSetup() {
+/** The server-issued HttpOnly session cookie is the only recovery mechanism.
+ * Wallet data is never used as a credential or workspace identity. */
+export function WorkspaceOnboarding() {
   const register = useRegisterAccount();
+  const { isFetching: checkingSession, refetch: checkSession } = useSession();
   const [displayName, setDisplayName] = useState("");
   const [accountType, setAccountType] = useState<"individual" | "freelancer" | "merchant" | "team" | "business">("individual");
   return <Card title="Create your VeilPay testnet workspace" testId="account-setup">
     <p className="text-sm text-zinc-400">Your Noir Wallet connection is read-only and never creates an account. Create a separate VeilPay workspace to own agents and policies.</p>
     <div className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-sm">Display name<input className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-2" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={64} /></label><label className="text-sm">Workspace type<select className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-2" value={accountType} onChange={(e) => setAccountType(e.target.value as typeof accountType)}><option value="individual">Individual</option><option value="freelancer">Freelancer</option><option value="merchant">Merchant</option><option value="team">Team</option><option value="business">Business</option></select></label></div>
     <Button className="mt-4" disabled={!displayName.trim()} busy={register.isPending} onClick={() => register.mutate({ displayName: displayName.trim(), accountType })}>Create secure session</Button>
-    <p className="mt-3 text-xs text-zinc-500">Testnet session only. It is separate from wallet data and expires automatically; no wallet address, history, balance, or memo is sent to VeilPay.</p>
+    <div className="mt-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+      <p>An existing workspace session on this browser is restored automatically from its server-issued secure cookie. Wallet connection is never used as sign-in.</p>
+      <Button variant="secondary" className="mt-2" busy={checkingSession} onClick={() => void checkSession()}>Check existing session</Button>
+    </div>
+    <p className="mt-3 text-xs text-zinc-500">Testnet session only. It expires automatically; no wallet address, history, balance, or memo is sent to VeilPay. A signed-out or expired session cannot be recovered by a wallet connection.</p>
     {register.error && <div className="mt-3"><ErrorBox>{errorText(register.error)}</ErrorBox></div>}
   </Card>;
 }
@@ -80,7 +72,7 @@ export function AgentSummary({ withControls = false }: { withControls?: boolean 
   const { data: a, isLoading, error } = useAgent(agentId, s?.context === "customer");
   const st = useSetAgentStatus();
   if (mode.kind === "mock" && !agentId) return <MockAgentSetup />;
-  if (!s?.authenticated || (s.context === "customer" && !agentId)) return <>{!s?.authenticated ? <AgentSetup /> : <LiveAgentSetup />}</>;
+  if (!s?.authenticated || (s.context === "customer" && !agentId)) return <>{!s?.authenticated ? <WorkspaceOnboarding /> : <LiveAgentSetup />}</>;
   if (s.context === "merchant") return <Card title="Merchant workspace" testId="merchant-workspace"><p className="text-sm text-zinc-400">This authenticated workspace can create and verify its own invoices. It cannot read or modify another user&apos;s payment agents or policies.</p></Card>;
   if (isLoading || !a) return error ? <ErrorBox>{errorText(error)}</ErrorBox> : <Skeleton className="h-48" />;
   const u = a.usage;
