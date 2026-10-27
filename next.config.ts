@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { apiProxyDestination } from "./src/lib/deployment-config";
 
 /**
  * Same-origin API: in live mode the browser calls /api/* and Next proxies it to the Rust
@@ -7,7 +8,7 @@ import type { NextConfig } from "next";
 // Keep the browser on a same-origin API. The proxy's separately configured
 // deployment network decides whether its narrow Testnet workspace writes are
 // available; the Rust backend repeats that policy.
-const backend = process.env.VEILPAY_BACKEND_URL ?? "http://127.0.0.1:4000/api";
+const backend = apiProxyDestination();
 
 const securityHeaders = [
   { key: "Referrer-Policy", value: "no-referrer" },
@@ -17,6 +18,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Produces the minimal Node runtime copied by the production Docker image.
+  // This remains a Node deployment: Proxy and rewrites are required for the
+  // same-origin authenticated API boundary.
+  output: "standalone",
   // Test harnesses can build/start an isolated production output while a local
   // development inspection server keeps using .next.
   distDir: process.env.VEILPAY_DIST_DIR ?? ".next",

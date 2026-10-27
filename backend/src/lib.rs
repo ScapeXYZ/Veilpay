@@ -33,22 +33,42 @@ pub struct Config {
 }
 impl Config {
     pub fn from_env() -> std::result::Result<Self, String> {
+        let public_deployment = std::env::var("VEILPAY_PUBLIC_DEPLOYMENT")
+            .map(|value| value == "1")
+            .unwrap_or(false);
+        let frontend_origin = match std::env::var("FRONTEND_ORIGIN") {
+            Ok(value) => value,
+            Err(_) if public_deployment => {
+                return Err("FRONTEND_ORIGIN is required for a public deployment".into());
+            }
+            Err(_) => "http://localhost:3100".into(),
+        };
         let c = Self {
             // Never reuse the historical demo database for a mainnet process.
             database_url: std::env::var("DATABASE_URL")
                 .unwrap_or("sqlite://veilpay-mainnet.db".into()),
-            frontend_origin: std::env::var("FRONTEND_ORIGIN")
-                .unwrap_or("http://localhost:3100".into()),
+            frontend_origin,
             network: std::env::var("NETWORK").unwrap_or("mainnet".into()),
         };
         if !["testnet", "regtest", "mainnet"].contains(&c.network.as_str()) {
             return Err("Invalid NETWORK".into());
         }
-        c.frontend_origin
-            .parse::<axum::http::HeaderValue>()
-            .map_err(|_| "Invalid FRONTEND_ORIGIN".to_owned())?;
+        validate_frontend_origin(&c.frontend_origin, public_deployment)?;
         Ok(c)
     }
+}
+
+fn validate_frontend_origin(
+    origin: &str,
+    public_deployment: bool,
+) -> std::result::Result<(), String> {
+    origin
+        .parse::<axum::http::HeaderValue>()
+        .map_err(|_| "Invalid FRONTEND_ORIGIN".to_owned())?;
+    if public_deployment && !origin.starts_with("https://") {
+        return Err("Public FRONTEND_ORIGIN must use HTTPS".into());
+    }
+    Ok(())
 }
 #[derive(Clone)]
 pub struct App {
@@ -1387,4 +1407,23 @@ fn verification(payment: &Value, invoice: &Value) -> Result<Value> {
     Ok(
         json!({"paymentId":payment["id"],"invoiceId":invoice["id"],"reference":payment["reference"],"state":state,"expectedZat":invoice["amountZat"],"receivedZat":received,"confirmations":confirmations,"confirmationsRequired":1,"checkedAt":now(),"method":"mock","mock":true,"late":late}),
     )
+}
+
+#[cfg(test)]
+mod deployment_config_tests {
+    use super::validate_frontend_origin;
+
+    #[test]
+    fn public_deployment_requires_an_https_frontend_origin() {
+        assert!(validate_frontend_origin("https://veilpay.example", true).is_ok());
+        assert_eq!(
+            validate_frontend_origin("http://veilpay.example", true),
+            Err("Public FRONTEND_ORIGIN must use HTTPS".into())
+        );
+    }
+
+    #[test]
+    fn local_development_keeps_the_documented_http_exception() {
+        assert!(validate_frontend_origin("http://localhost:3200", false).is_ok());
+    }
 }
