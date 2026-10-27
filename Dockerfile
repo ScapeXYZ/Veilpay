@@ -41,8 +41,9 @@ ENV NODE_ENV=production \
 
 RUN groupadd --system --gid 10001 veilpay \
     && useradd --system --uid 10001 --gid veilpay --home-dir /app --no-create-home veilpay \
-    && mkdir -p /tmp/veilpay /app/frontend/.next \
-    && chown -R veilpay:veilpay /tmp/veilpay /app
+    && install -d --owner=10001 --group=10001 --mode=0700 /tmp/veilpay \
+    && mkdir -p /app/frontend/.next \
+    && chown -R veilpay:veilpay /app
 
 COPY --from=backend-build /build/veilpay-backend /app/veilpay-backend
 COPY --from=frontend-build /build/.next/standalone/ /app/frontend/
@@ -51,6 +52,13 @@ COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chown veilpay:veilpay /app/veilpay-backend /app/docker-entrypoint.sh \
     && chmod 0555 /app/veilpay-backend /app/docker-entrypoint.sh
 
-USER veilpay
+# Regression check: the same unprivileged user that runs the service must be
+# able to create the private, disposable SQLite database directory.
+USER 10001:10001
+RUN test "$(id -u)" -eq 10001 \
+    && test -d /tmp/veilpay \
+    && test -w /tmp/veilpay \
+    && touch /tmp/veilpay/.write-check \
+    && rm /tmp/veilpay/.write-check
 EXPOSE 10000
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
