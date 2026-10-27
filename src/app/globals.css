@@ -7,33 +7,33 @@
  * the new palette without per-component churn.
  */
 @theme {
-  --color-zinc-50: #f4f7f8;
-  --color-zinc-100: #e6ecee;
-  --color-zinc-200: #cdd6da;
-  --color-zinc-300: #b8c4ca;
-  --color-zinc-400: #a5b2b9;
-  --color-zinc-500: #8d9ba2;
-  --color-zinc-600: #66757c;
-  --color-zinc-700: #2e3c43;
-  --color-zinc-800: #1b272d;
-  --color-zinc-900: #131b1f;
-  --color-zinc-950: #0b1012;
+  --color-zinc-50: #f3fbff;
+  --color-zinc-100: #deedf3;
+  --color-zinc-200: #bfd3dc;
+  --color-zinc-300: #9fb9c5;
+  --color-zinc-400: #7795a3;
+  --color-zinc-500: #587482;
+  --color-zinc-600: #3b5665;
+  --color-zinc-700: #203b4b;
+  --color-zinc-800: #102938;
+  --color-zinc-900: #0a1b29;
+  --color-zinc-950: #030c17;
 
-  --color-accent-200: #c4f2f7;
-  --color-accent-300: #a2e8f0;
-  --color-accent-400: #78dce8;
-  --color-accent-500: #4fc5d4;
-  --color-accent-900: #123a41;
-  --color-accent-950: #0b2429;
+  --color-accent-200: #c6f9ff;
+  --color-accent-300: #78efff;
+  --color-accent-400: #42d9ef;
+  --color-accent-500: #16bcd7;
+  --color-accent-900: #115466;
+  --color-accent-950: #082a3a;
 
   /*
    * Sealed Ledger roles (approved direction). Each colour has ONE job and is always paired
    * with a word and an icon. shield = shielded things, focus ring, primary action only.
    * open = transparent / public. practice = the practice frame and practice labels.
    */
-  --color-line: #2e3c43;
-  --color-edge: #66757c;
-  --color-shield: #78dce8;
+  --color-line: #1c4254;
+  --color-edge: #396678;
+  --color-shield: #42d9ef;
   --color-open: #dcc7a1;
   --color-practice: #c3b5f5;
   --color-ok: #6fd39b;
@@ -57,7 +57,7 @@
 
 html,
 body {
-  background: #0b1012;
+  background: #030c17;
 }
 
 body {
@@ -65,6 +65,10 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(75rem 48rem at 91% -12%, rgb(20 181 217 / 0.16), transparent 55%),
+    radial-gradient(58rem 45rem at -8% 108%, rgb(97 71 190 / 0.13), transparent 57%);
+  background-attachment: fixed;
 }
 
 /* Display face: page titles, the policy sheet title and empty-state headlines only. */
@@ -106,8 +110,47 @@ body {
 /* Subtle abstract privacy veil, landing hero only. */
 .veil {
   background:
-    radial-gradient(60% 80% at 85% 10%, rgb(120 220 232 / 0.10), transparent 60%),
-    radial-gradient(50% 60% at 0% 100%, rgb(120 220 232 / 0.05), transparent 60%);
+    radial-gradient(60% 80% at 85% 10%, rgb(66 217 239 / 0.16), transparent 60%),
+    radial-gradient(50% 60% at 0% 100%, rgb(106 73 216 / 0.11), transparent 60%);
+}
+
+.veilpay-app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.veilpay-app-shell::before {
+  position: fixed;
+  z-index: -1;
+  top: 13%;
+  right: -19rem;
+  width: 48rem;
+  height: 48rem;
+  border: 1px solid rgb(83 233 255 / 0.13);
+  border-radius: 999px;
+  box-shadow: 0 0 0 5rem rgb(83 233 255 / 0.025), 0 0 0 11rem rgb(123 84 255 / 0.018);
+  content: "";
+  pointer-events: none;
+}
+
+.veilpay-top-strip {
+  height: 4px;
+  background: linear-gradient(90deg, #bd582c, #d47a37 45%, #8d3725);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-color: rgb(36 83 101) !important;
+  background-color: rgb(5 23 36) !important;
+  box-shadow: inset 0 1px 0 rgb(136 241 255 / 0.035);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: #42d9ef !important;
+  box-shadow: 0 0 0 3px rgb(66 217 239 / 0.13) !important;
 }
 
 * {

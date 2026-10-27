@@ -49,7 +49,7 @@ export function StatusBadge({ tone = "neutral", children, testId }: { tone?: Ton
 
 export function Card({ children, className, title, action, testId }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; testId?: string }) {
   return (
-    <section data-testid={testId} className={clsx("rounded-[14px] border border-line bg-zinc-900 p-5", className)}>
+    <section data-testid={testId} className={clsx("rounded-[16px] border border-line bg-zinc-900/90 p-5 shadow-[inset_0_1px_0_rgb(150_244_255_/_0.045),0_18px_44px_rgb(0_0_0_/_0.16)] backdrop-blur-sm", className)}>
       {(title || action) && (
         <header className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           {title && <h2 className="min-w-0 text-sm font-semibold tracking-wide text-zinc-200">{title}</h2>}
@@ -71,8 +71,8 @@ export function Button({ variant = "primary", busy, className, children, disable
       aria-busy={busy || undefined}
       className={clsx(
         "inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 disabled:cursor-not-allowed disabled:opacity-50",
-        variant === "primary" && "bg-accent-400 text-zinc-950 hover:bg-accent-300",
-        variant === "secondary" && "bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700",
+        variant === "primary" && "bg-gradient-to-b from-accent-300 to-accent-500 text-zinc-950 shadow-[0_7px_18px_rgb(19_196_219_/_0.2)] hover:from-[#a1f5ff] hover:to-accent-400",
+        variant === "secondary" && "bg-zinc-800/90 text-zinc-100 ring-1 ring-zinc-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)] hover:bg-zinc-700",
         variant === "ghost" && "text-zinc-300 hover:bg-zinc-800",
         variant === "danger" && "bg-rose-600 text-white hover:bg-rose-500",
         className,
