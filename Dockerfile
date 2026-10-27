@@ -14,7 +14,8 @@ COPY backend ./backend
 COPY scripts/patches ./scripts/patches/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/backend/target \
-    cargo build --release --locked --manifest-path backend/Cargo.toml
+    cargo build --release --locked --manifest-path backend/Cargo.toml \
+    && install -Dm0555 backend/target/release/veilpay-backend /build/veilpay-backend
 
 FROM node:22-bookworm-slim AS frontend-build
 WORKDIR /build
@@ -43,7 +44,7 @@ RUN groupadd --system --gid 10001 veilpay \
     && mkdir -p /tmp/veilpay /app/frontend/.next \
     && chown -R veilpay:veilpay /tmp/veilpay /app
 
-COPY --from=backend-build /build/backend/target/release/veilpay-backend /app/veilpay-backend
+COPY --from=backend-build /build/veilpay-backend /app/veilpay-backend
 COPY --from=frontend-build /build/.next/standalone/ /app/frontend/
 COPY --from=frontend-build /build/.next/static/ /app/frontend/.next/static/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
