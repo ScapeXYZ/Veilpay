@@ -9,11 +9,12 @@ import { RouteAnnouncements } from "./route-announcements";
 /** Shell for the public landing and the guided demo: no operational sidebar. */
 export function PublicShell({ children, banner = <MockBanner /> }: { children: ReactNode; banner?: ReactNode }) {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="veilpay-app-shell min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="veilpay-top-strip" aria-hidden />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-accent-400 focus:p-3 focus:text-zinc-950">Skip to main content</a>
       <RouteAnnouncements />
       {banner}
-      <header className="border-b border-zinc-900">
+      <header className="border-b border-zinc-800 bg-zinc-950/55 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 lg:px-8">
           <Logo />
           <nav className="flex items-center gap-1 text-sm" aria-label="Site">

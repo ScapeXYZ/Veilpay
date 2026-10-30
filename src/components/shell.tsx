@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Settings, Shield, ShieldCheck, Store, Wallet, X } from "lucide-react";
+import { Activity, AlertTriangle, Eye, Home, LayoutDashboard, ListOrdered, Loader2, Lock, MoreHorizontal, PlayCircle, Settings, ShieldCheck, Store, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -15,6 +15,7 @@ import { RouteAnnouncements } from "./route-announcements";
 import { Term } from "./term";
 import { OnboardingProvider } from "./onboarding";
 import { useOnboarding } from "@/lib/onboarding";
+import { VeilPayBrand } from "./brand-mark";
 
 export function HealthStrip() {
   const { data: h } = useHealth();
@@ -96,12 +97,8 @@ function isActive(path: string, href: string) {
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5" aria-label="VeilPay home">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-400 text-zinc-950" aria-hidden>
-        <Shield size={17} strokeWidth={2.4} />
-      </span>
-      <span className="font-semibold tracking-tight text-zinc-50">VeilPay</span>
-      {!compact && <span className="hidden text-xs text-zinc-500 xl:inline">safe spending for AI agents</span>}
+    <Link href="/" className="group" aria-label="VeilPay home">
+      <VeilPayBrand compact={compact} />
     </Link>
   );
 }
@@ -153,7 +150,7 @@ function RailLink({ href, active, small, children }: { href: string; active: boo
   return (
     <Link href={href} aria-current={active ? "page" : undefined}
       className={clsx("flex items-center gap-2.5 rounded-lg px-2.5 transition-colors duration-150", small ? "py-1.5 text-[13px]" : "py-2 text-sm",
-        active ? "bg-accent-950 text-accent-200 ring-1 ring-inset ring-accent-900" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100")}>
+        active ? "bg-accent-950/75 text-accent-200 ring-1 ring-inset ring-accent-400 shadow-[inset_0_1px_0_rgb(173_246_255_/_0.12)]" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100")}>
       {children}
     </Link>
   );
@@ -178,19 +175,21 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const mock = mode.kind === "mock";
   const navigation = mode.kind === "unknown" ? NAV.slice(0, 1) : mode.kind === "mainnet_readonly" ? NAV.slice(0, 4) : NAV;
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="veilpay-app-shell min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="veilpay-top-strip" aria-hidden />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-accent-400 focus:p-3 focus:text-zinc-950">Skip to main content</a>
       <RouteAnnouncements />
       <MockBanner />
       <div className="lg:flex">
-        <aside className="hidden lg:sticky lg:top-8 lg:flex lg:h-[calc(100vh-2rem)] lg:w-56 lg:shrink-0 lg:flex-col lg:border-r lg:border-zinc-900 lg:px-3 lg:py-5">
-          <div className="px-2"><Logo /></div>
-          <nav className="mt-7 flex flex-col gap-0.5" aria-label="Main">
+        <aside className="hidden lg:sticky lg:top-1 lg:flex lg:h-[calc(100vh-0.25rem)] lg:w-72 lg:shrink-0 lg:flex-col lg:border-r lg:border-zinc-800 lg:bg-zinc-950/65 lg:px-5 lg:py-7 lg:backdrop-blur-xl">
+          <div className="rounded-2xl border border-accent-900/70 bg-[linear-gradient(145deg,rgba(10,38,56,.9),rgba(5,17,31,.72))] px-3 py-4 shadow-[inset_0_1px_0_rgb(127_245_255_/_0.09)]"><Logo /></div>
+          <div className="mt-7 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Workspace</div>
+          <nav className="mt-2 flex flex-col gap-1" aria-label="Main">
             {navigation.map(({ href, label, icon: Icon }) => (
               <RailLink key={href} href={href} active={isActive(path, href)}><Icon size={16} aria-hidden /> {label}</RailLink>
             ))}
           </nav>
-          <div className="mt-6 px-2.5 text-xs font-medium uppercase tracking-wide text-zinc-600" id="more-heading">More</div>
+          <div className="mt-7 px-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600" id="more-heading">More</div>
           <nav className="mt-1.5 flex flex-col gap-0.5" aria-labelledby="more-heading" data-testid="rail-more">
             {MORE.map(({ href, label, icon: Icon }) => (
               <RailLink key={href} href={href} active={isActive(path, href)} small><Icon size={15} aria-hidden /> {label}</RailLink>
@@ -201,7 +200,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
           </div>
         </aside>
         <div className="min-w-0 flex-1">
-          <header className="sticky top-8 z-40 border-b border-zinc-900 bg-zinc-950/85 backdrop-blur lg:top-8">
+          <header className="sticky top-1 z-40 border-b border-zinc-800 bg-zinc-950/78 backdrop-blur-xl lg:top-1">
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
               <div className="lg:hidden"><Logo compact /></div>
               <div className="hidden lg:block"><StatusStrip /></div>
